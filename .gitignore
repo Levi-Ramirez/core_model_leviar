@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.venv/
+venv/
+
+# Medical imaging data — never commit patient data or PHI to this repo.
+*.nii
+*.nii.gz
+*.dcm
+*.zip
+*.ply
+*.obj
+segmentation/
+dicom/
+nifti/
+out/
+outputs/
+
+# OS
+.DS_Store
