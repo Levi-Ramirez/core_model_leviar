@@ -67,6 +67,68 @@ registration transform to its meshes, but keeping the same coordinate
 convention means these meshes are usable as-is by the post-P0 overlap view
 once that's built, without a rewrite.
 
+## DICOM to NIfTI conversion
+
+`ingest.py` needs to turn a DICOM directory/zip into a NIfTI volume when
+the input isn't already NIfTI.
+
+| Option | Pros | Cons |
+|---|---|---|
+| **dicom2nifti** (chosen) | Pure Python, pip-installable, no external binary; purpose-built for exactly this conversion; already proven on real multi-series CT data in this project's earlier ad hoc analysis work | Smaller maintenance base than some alternatives; splits a directory into one NIfTI per series rather than assuming a single volume (see below); can raise on some non-standard/malformed DICOM |
+| **dcm2niix** (external binary, subprocess) | Widely regarded as the most robust converter in the radiology/neuroimaging community; handles more real-world scanner quirks correctly (gantry tilt, vendor-specific edge cases) | Not a Python package — a separately-installed compiled binary, invoked via subprocess; breaks the pip-install-and-go story and complicates cross-platform install instructions |
+| **SimpleITK (manual series reading)** | Already adjacent to this project's dependency tree (TotalSegmentator itself depends on it) | We'd be reimplementing series grouping/orientation/NIfTI-writing ourselves using lower-level primitives — redoing work a dedicated library already does |
+| **pydicom + manual NIfTI assembly** | Maximum control | Substantial reimplementation effort with real correctness pitfalls (slice ordering, affine construction from orientation/position tags) that existing libraries have already solved |
+
+**Chosen: dicom2nifti.** It's the only option that's both a clean pip
+dependency and purpose-built for this exact conversion, and it's already
+been exercised successfully on real scan data earlier in this project.
+
+### Series selection
+
+`dicom2nifti`'s directory conversion produces *multiple* NIfTI files if the
+input directory contains more than one series — and it usually does: a raw
+hospital export routinely bundles a primary axial series alongside
+sagittal/coronal reformats, a different-window recon (e.g. lung window),
+and sometimes a scout/topogram. This is the common case for this feature's
+actual input, not an edge case to shrug off.
+
+Rejected approaches:
+- **Require single-series input, error otherwise.** Simplest to build, but
+  undercuts the "no separate manual pre-processing step required" purpose
+  stated in requirements — most real input would fail on first use.
+- **Silent heuristic auto-selection** (e.g. picking by voxel shape, the
+  way this project's earlier ad hoc analysis eyeballed it — a sagittal
+  reformat's shape like `(101, 512, 869)`, thin in one axis, is visibly
+  not the primary acquisition). Handles the common case, but a wrong guess
+  silently feeds the wrong volume into TotalSegmentator and produces a
+  plausible-looking but incorrect model, with nothing telling the user
+  anything was ambiguous.
+
+**Chosen approach: filter by orientation; auto-select only when
+unambiguous, otherwise surface the choice.**
+
+1. Group the input directory's DICOM files by series, and classify each
+   series' orientation from its `ImageOrientationPatient` tag (via
+   `pydicom` — already a transitive dependency of `dicom2nifti`, so this
+   adds nothing new). This is the DICOM standard's own authoritative
+   orientation signal (the direction cosines), not a post-hoc guess from
+   array shape.
+2. Keep only axially-oriented series; discard sagittal/coronal reformats
+   before ever calling `dicom2nifti`'s conversion.
+3. If exactly one axial series remains, auto-select it — and report which
+   one was picked, rather than doing so silently.
+4. If zero or more than one axial series remains (e.g. a lung-window recon
+   alongside a soft-tissue-window recon, both genuinely axial), raise a
+   clear error listing the candidate series rather than guessing between
+   them. The caller can then either narrow the input, or bypass the
+   ambiguity entirely using the NIfTI-passthrough path already in
+   requirement #1 (hand `ingest.py` a specific, already-chosen volume
+   directly).
+
+Extracted zip contents are written to a temporary location, not the
+project working directory, so nothing from a real scan lands somewhere
+`.gitignore` doesn't already cover.
+
 ## Mesh export format
 
 The job this decision covers is narrow: `skimage.measure.marching_cubes`

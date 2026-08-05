@@ -22,6 +22,9 @@ separate manual pre-processing step required.
   - An **"overlap" view**: merge two scans' meshes into one combined 3D
     scene so differences can be seen directly, instead of only via separate
     per-scan models. Deferred until further testing of alignment accuracy.
+  - **Multi-scan / batch invocation**: process a whole scan history in one
+    call. P0's CLI processes one scan per invocation; producing models for
+    several scans means invoking it once per scan.
 
 ## Functional requirements
 
@@ -34,11 +37,9 @@ separate manual pre-processing step required.
    its structures of interest plus that same scan's own spine, for
    anatomical context — built entirely from that scan's own data, in its
    own native coordinate frame.
-4. **Multi-scan support**: one independent model is produced per scan,
-   for any number of scans.
-5. **CLI**: a command-line entry point covering the full path from raw
-   scan input to exported 3D model(s), for someone who isn't going to
-   import the library directly.
+4. **CLI**: a command-line entry point covering the full path from raw
+   scan input to an exported 3D model, for someone who isn't going to
+   import the library directly. Operates on one scan per invocation.
 
 ## Non-functional requirements
 
@@ -88,3 +89,5 @@ trustworthy and maintainable as it grows.
   then.
 - No merged/overlaid multi-scan 3D visualization in P0 (that's the post-P0
   "overlap" view) — each scan's 3D model stands alone.
+- No batch/multi-scan processing in one CLI invocation in P0 (that's
+  post-P0) — one scan per invocation.
