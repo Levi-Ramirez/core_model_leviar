@@ -17,6 +17,11 @@ separate manual pre-processing step required.
 - **P0 (current)**: a local tool. Runs entirely on the user's own machine —
   "bring your scans" means pointing the CLI/library at local files, nothing
   is transmitted anywhere.
+- **Post-P0 (future, not yet started)**:
+  - A hosted web interface with upload and view capabilities.
+  - An **"overlap" view**: merge two scans' meshes into one combined 3D
+    scene so differences can be seen directly, instead of only via separate
+    per-scan models. Deferred until further testing of alignment accuracy.
 
 ## Functional requirements
 
@@ -78,7 +83,8 @@ trustworthy and maintainable as it grows.
 - Not a diagnostic tool. A 3D model is a visualization, not a clinical
   finding. See the medical disclaimer in the top-level README once written.
 - No hosted/web component (that's post-P0, unscheduled).
-- No GUI in P0 — mesh export (PLY) is the deliverable; viewing happens in
-  existing external tools (Blender, MeshLab, etc.) until then.
+- No GUI in P0 — exported mesh files (PLY by default) are the deliverable;
+  viewing happens in existing external tools (Blender, MeshLab, etc.) until
+  then.
 - No merged/overlaid multi-scan 3D visualization in P0 (that's the post-P0
   "overlap" view) — each scan's 3D model stands alone.
