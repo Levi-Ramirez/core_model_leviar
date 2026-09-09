@@ -1,174 +1,266 @@
 # Design: 3D Model Generation
 
-## Pipeline
+## Pipeline and ownership
 
-```
-raw scan (DICOM dir/zip, or NIfTI)
-    │  ingest.py
-    ▼
-NIfTI volume
-    │  segmentation.py  (invokes TotalSegmentator)
-    ▼
-folder of per-structure mask files (.nii.gz)
-    │  mesh.py            (marching cubes, per structure)
-    ▼
-per-structure meshes, in world (RAS, mm) coordinates
-    │  model.py            (assemble structures-of-interest + spine)
-    ▼
-one exported 3D model per scan
+```text
+pipeline.generate_model(input_path, output_dir, options) -> GenerationResult
+    ingest -> validated NIfTI -> segmentation -> validated per-class masks
+        -> mesh extraction -> named Scene -> PLY exports
+                                         -> rendering -> PNGs
+    manifest updated at each stage; owned temporary workspace cleaned
 ```
 
-## Module layout
+`render.py` consumes the assembled Scene, never re-extracts masks, and never
+mutates exported geometry. Scene vertices are already in RAS+ millimeters;
+node transforms are identity in P0. Export and rendering must apply scene
+transforms if nonidentity transforms are supported later.
 
-```
+```text
 src/core_model/
-├── ingest.py         # raw scan (DICOM/NIfTI) -> NIfTI volume path
-├── segmentation.py     # invoke TotalSegmentator -> segmentation folder
-├── anatomy.py            # structure-name constants (see below)
-├── mesh.py                  # marching-cubes extraction + export, per structure
-├── model.py                    # assemble a scan's structures-of-interest + spine into one model
-└── cli.py                         # command-line entry point
+    contracts.py     # options, result records, typed errors
+    anatomy.py       # supported classes, defaults, context, stable colors
+    ingest.py        # discovery, selection, conversion, input validation
+    segmentation.py  # inference settings, telemetry disabling, and model invocation
+    mesh.py          # mask-to-world extraction
+    model.py         # scene assembly and exports
+    render.py        # render the assembled meshes without modification
+    pipeline.py      # lifecycle, stage orchestration, manifest
+    cli.py           # argument parsing and result presentation
 ```
 
-## Structures of interest vs. spine
+## API and output contract (R7, R11)
 
-A model is built from two kinds of structures:
+`GenerationOptions` contains `series_id`, `include`, `all_structures`,
+`device` (`cpu`, `gpu`, or `mps`), and `quality` (`standard` or `fast`).
+Defaults are CPU and standard quality for reproducibility; no hardware
+fallback. `include` and `all_structures` are mutually exclusive; an explicit
+empty include list is invalid. The task is fixed to `total` in P0.
 
-- **Structures of interest**: defaults to _all_ structures TotalSegmentator
-  produced for the scan. A user can narrow this with an explicit include
-  list (e.g. just `liver`, `colon`) — each name must be a TotalSegmentator
-  output class.
-- **Spine**: fixed context set, always included regardless of the
-  structures-of-interest selection — even a narrowed include list still
-  gets the spine added, so the model is anatomically orientable on its own.
-  Defined as the union of whichever vertebrae, sacrum, and hip masks
-  TotalSegmentator actually produced for that scan (not all scans' fields of
-  view include every level).
+`list_series(input_path)` returns candidate records with stable selection
+IDs, modality, slice count, support status, and rejection reasons.
+Geometry support remains unverified until the selected series is converted.
+IDs are derived from series UIDs using a collision-checked digest; do not
+expose patient tags, free-text descriptions, original filenames, or raw UIDs
+in routine output. Identifiers and manifests still remain local artifacts.
 
-The spine structure-name list lives in `anatomy.py` as a named constant,
-rather than inline in `model.py`, so "what counts as the spine" has one
-definition to update if TotalSegmentator's label set ever changes.
+`generate_model(...)` returns a `GenerationResult` with status (`complete`
+or `partial`), artifact paths, included classes, skipped-class reasons,
+warnings, and stage timings. Fatal failures raise a typed `GenerationError`
+carrying stage, reason, and any persisted result/manifest path. Library code
+does not exit the process or require terminal interaction.
 
-## Mesh extraction
+```text
+output_dir/
+    model.ply
+    structures/<class>.ply
+    previews/<class>.png
+    previews/combined.png
+    manifest.json
+```
 
-Marching cubes (`skimage.measure.marching_cubes`) on each structure's
-binary mask, at the 0.5 isosurface level — the standard approach for
-converting a label volume into a surface mesh, already proven out in this
-project's earlier ad hoc analysis scripts. Resulting vertices are in voxel
-index space; they're transformed into world coordinates (RAS, mm) via the
-scan's NIfTI affine (`nibabel`) before export, so the model reflects
-physical geometry rather than raw array indices.
+Require a new or empty output directory; reject nonempty directories before
+expensive work. P0 has no overwrite mode. Write artifacts through temporary
+siblings and atomic replacement. Record only completed artifacts; manifests
+have schema version and `running`, `complete`, `partial`, or `failed` status.
+A leftover `running` manifest after forced termination is not success.
 
-## Coordinate conventions
+The pipeline owns a temporary directory outside the repository for extracted
+DICOM, converted input, and segmentation masks. Ingest receives this
+workspace; its returned paths remain valid until pipeline cleanup in
+`finally`. Never delete or modify original inputs. After interruption,
+cleanup is best effort; document that process termination/power loss can
+leave temporary files. Do not persist intermediates by default.
 
-World coordinates are RAS+ (Right-Anterior-Superior positive), the same
-convention `registration.py` uses. This feature doesn't apply any
-registration transform to its meshes, but keeping the same coordinate
-convention means these meshes are usable as-is by the post-P0 overlap view
-once that's built, without a rewrite.
+Geometry/inference/export failures are fatal. Successfully written artifacts
+may remain, with a failed manifest; do not present an incomplete export set
+as success. Individual preview failures retain all valid exports, attempt
+remaining previews, and produce `partial` with per-preview errors. CLI exit
+codes: 0 complete, 1 fatal, 2 invalid arguments/selection/input, 3 partial.
 
-## DICOM to NIfTI conversion
+Manifest fields include settings, resolved device, versions of all direct
+dependencies, model task and weight checksum/identifier, image shape/affine/
+units, mask geometry, candidate ID, structure outcomes and colors, clipping
+warnings, timings, and relative artifact paths. Exclude
+original input paths, patient tags, and raw exception text containing them.
 
-`ingest.py` needs to turn a DICOM directory/zip into a NIfTI volume when
-the input isn't already NIfTI.
+## Input validation and selection (R1)
 
-| Option | Pros | Cons |
-|---|---|---|
-| **dicom2nifti** (chosen) | Pure Python, pip-installable, no external binary; purpose-built for exactly this conversion; already proven on real multi-series CT data in this project's earlier ad hoc analysis work | Smaller maintenance base than some alternatives; splits a directory into one NIfTI per series rather than assuming a single volume (see below); can raise on some non-standard/malformed DICOM |
-| **dcm2niix** (external binary, subprocess) | Widely regarded as the most robust converter in the radiology/neuroimaging community; handles more real-world scanner quirks correctly (gantry tilt, vendor-specific edge cases) | Not a Python package — a separately-installed compiled binary, invoked via subprocess; breaks the pip-install-and-go story and complicates cross-platform install instructions |
-| **SimpleITK (manual series reading)** | Already adjacent to this project's dependency tree (TotalSegmentator itself depends on it) | We'd be reimplementing series grouping/orientation/NIfTI-writing ourselves using lower-level primitives — redoing work a dedicated library already does |
-| **pydicom + manual NIfTI assembly** | Maximum control | Substantial reimplementation effort with real correctness pitfalls (slice ordering, affine construction from orientation/position tags) that existing libraries have already solved |
+Choose `dicom2nifti` for conversion and `pydicom` for discovery. Keeping
+selection separate makes ambiguity actionable through the same input path.
 
-**Chosen: dicom2nifti.** It's the only option that's both a clean pip
-dependency and purpose-built for this exact conversion, and it's already
-been exercised successfully on real scan data earlier in this project.
+Group by StudyInstanceUID and SeriesInstanceUID using `pydicom`. P0 supports
+conventional single-frame CT; reject non-CT data and enhanced multiframe CT
+with explicit reasons. Discovery identifies series, not the best acquisition
+or reconstruction for segmentation.
 
-### Series selection
+Without an explicit selection, proceed only when exactly one CT series is
+present and it passes support checks and conversion. If multiple CT series
+are present, list them and require `--series <id>`, even if some are already
+known to be unsupported. Provide an executable selection example for each
+candidate not already rejected. With no CT series, report that no supported
+input was found. Explicit selection cannot override an unsupported input.
 
-`dicom2nifti`'s directory conversion produces *multiple* NIfTI files if the
-input directory contains more than one series — and it usually does: a raw
-hospital export routinely bundles a primary axial series alongside
-sagittal/coronal reformats, a different-window recon (e.g. lung window),
-and sometimes a scout/topogram. This is the common case for this feature's
-actual input, not an edge case to shrug off.
+Convert only the selected series. Delegate DICOM geometry validation,
+including orientation consistency, dimensions, slice spacing, and duplicate
+positions, to `dicom2nifti`; keep its validation enabled. Surface converter
+failures with actionable, non-identifying reasons. Do not implement our own
+orientation classifier, angular threshold, or geometry-based series ranking.
+Do not automatically retry another series after conversion failure. Users
+can select another series from the same input without manually splitting or
+externally converting their files.
 
-Rejected approaches:
-- **Require single-series input, error otherwise.** Simplest to build, but
-  undercuts the "no separate manual pre-processing step required" purpose
-  stated in requirements — most real input would fail on first use.
-- **Silent heuristic auto-selection** (e.g. picking by voxel shape, the
-  way this project's earlier ad hoc analysis eyeballed it — a sagittal
-  reformat's shape like `(101, 512, 869)`, thin in one axis, is visibly
-  not the primary acquisition). Handles the common case, but a wrong guess
-  silently feeds the wrong volume into TotalSegmentator and produces a
-  plausible-looking but incorrect model, with nothing telling the user
-  anything was ambiguous.
+Zip extraction rejects absolute paths, traversal, and symlink entries;
+extract into the owned workspace. Directory and zip discovery must produce
+the same IDs for the same series. Unrelated files are ignored; malformed
+DICOM candidates are reported without leaking identifying metadata.
 
-**Chosen approach: filter by orientation; auto-select only when
-unambiguous, otherwise surface the choice.**
+NIfTI input must be a finite, scalar 3D CT volume with at least two samples
+per axis and usable physical geometry. Reject 4D, nonfinite, or singular
+geometry. Require a coded qform or sform; reject conflicting coded forms
+when their corner positions differ by more than 0.01 mm. Convert declared
+meter/micron units to mm; reject unknown spatial units. CT/HU provenance
+cannot be inferred reliably from arbitrary NIfTI values: document it as an
+input obligation rather than silently rescaling intensities.
 
-1. Group the input directory's DICOM files by series, and classify each
-   series' orientation from its `ImageOrientationPatient` tag (via
-   `pydicom` — already a transitive dependency of `dicom2nifti`, so this
-   adds nothing new). This is the DICOM standard's own authoritative
-   orientation signal (the direction cosines), not a post-hoc guess from
-   array shape.
-2. Keep only axially-oriented series; discard sagittal/coronal reformats
-   before ever calling `dicom2nifti`'s conversion.
-3. If exactly one axial series remains, auto-select it — and report which
-   one was picked, rather than doing so silently.
-4. If zero or more than one axial series remains (e.g. a lung-window recon
-   alongside a soft-tissue-window recon, both genuinely axial), raise a
-   clear error listing the candidate series rather than guessing between
-   them. The caller can then either narrow the input, or bypass the
-   ambiguity entirely using the NIfTI-passthrough path already in
-   requirement #1 (hand `ingest.py` a specific, already-chosen volume
-   directly).
+## Segmentation and model weights (R2, R8)
 
-Extracted zip contents are written to a temporary location, not the
-project working directory, so nothing from a real scan lands somewhere
-`.gitignore` doesn't already cover.
+Use TotalSegmentator's Python API with explicit `task=total`, quality,
+device, per-class mask output, and auxiliary previews/statistics disabled.
+Run the full task in P0; include selection affects assembly, avoiding an
+implicit quality change from ROI-dependent inference. Validate includes
+against the tested task label map before calling the model.
 
-## Mesh export format
+Invoke TotalSegmentator directly and allow its normal automatic download of
+missing weights. Document that first use requires internet access; cached
+weights are managed by TotalSegmentator. Surface download failures with a
+clear explanation so the user can retry after restoring connectivity.
 
-The job this decision covers is narrow: `skimage.measure.marching_cubes`
-(already chosen — see Mesh extraction above) hands back vertex and face
-arrays; something needs to turn those into an exported file. It is not a
-choice of marching-cubes implementation, and not a choice about stacking
-2D slices into a volume — this project's input is already a 3D NIfTI
-volume via `nibabel`, so there's no slice-stacking step to have an opinion
-about.
+Disable usage telemetry through TotalSegmentator's supported configuration
+before inference, leaving unrelated settings unchanged. Scan data and
+patient metadata remain local. Verify invocation and telemetry disabling
+against the tested upstream version. P0 does not add a separate weight-setup
+command, application-owned configuration, strict offline enforcement, or
+backend concurrency machinery.
 
-| Option                       | Pros                                                                                                                                                                                                                                                                                                                                                                                                     | Cons                                                                                                                                                                                                                                                                             |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **trimesh** (chosen)         | Numpy-based, pip-installs cleanly with no compilation; takes `marching_cubes` vertex/face arrays directly; binary PLY (meaningfully smaller than ASCII for organ-scale meshes, which can run into hundreds of thousands of triangles) plus OBJ/STL/GLB for free; `trimesh.Scene` is a direct fit for assembling structures-of-interest + spine into one exported model; actively maintained, widely used | A new dependency to track/pin; adds an abstraction layer between us and the raw file bytes; some optional trimesh features pull in extra dependencies (core PLY/OBJ/STL export does not)                                                                                         |
-| **Open3D**                   | Comprehensive 3D toolkit (registration, point clouds, built-in viewer)                                                                                                                                                                                                                                                                                                                                   | Heavy dependency — compiled C++ core, large wheels, bundles a visualization stack we don't need; historically platform-dependent install friction; most of its capability goes unused for a narrow export job                                                                    |
-| **PyMesh**                   | Purpose-built for mesh processing (boolean ops, repair) that could matter for future features                                                                                                                                                                                                                                                                                                            | Weak pip-installability — often needs building from source against system libraries (e.g. CGAL); less actively maintained; fragile dependency for a project meant to be easy for others to install                                                                               |
-| **Hand-rolled PLY exporter** | Zero new dependencies; full control; nothing external to break                                                                                                                                                                                                                                                                                                                                           | We own every bug/edge case; ASCII-only unless we also hand-roll binary PLY (materially more complex — correct little-endian struct packing per the format spec); no OBJ/STL/GLB without writing each ourselves; no built-in multi-mesh scene composition — we'd rebuild that too |
+Default tests mock inference and downloads and remain offline. Opt-in real
+inference may download missing weights, but never downloads scan data.
 
-**Chosen: trimesh.** It's the lightest option that still does the actual
-job (format export + scene composition) without Open3D's install weight or
-PyMesh's install fragility, and it avoids reimplementing binary PLY
-correctness by hand.
+## Anatomy and failure policy (R3)
 
-**Output format: PLY by default**, matching the deliverable stated in
-requirements. The exporter is not hardcoded to PLY-only, though — trimesh
-makes OBJ/STL/GLB available at effectively no extra cost, and GLB in
-particular is the standard format a future web viewer (post-P0) would
-want, so the export function takes the format as a parameter rather than
-assuming PLY unconditionally. P0's CLI defaults to PLY and does not expose
-a format flag as a feature in its own right.
+`DEFAULT_STRUCTURES` is: `liver`, `spleen`, `kidney_left`, `kidney_right`,
+`gallbladder`, `stomach`, `pancreas`, `adrenal_gland_left`,
+`adrenal_gland_right`, `duodenum`, `small_bowel`, `colon`, `urinary_bladder`.
+Verify this set against the pinned `total` task before release.
 
-## Testing strategy
+`SPINE_AND_PELVIS_STRUCTURES` contains `vertebrae_C1` through `vertebrae_C7`,
+`vertebrae_T1` through `vertebrae_T12`, `vertebrae_L1` through `vertebrae_L5`,
+`sacrum`, `hip_left`, and `hip_right`. Assemble the union with the selected
+interest set, deduplicated by class name. Keep each bone individually named;
+this is a set union, not a geometric boolean union.
 
-- `mesh.py`: unit tests build tiny synthetic binary masks (e.g. a numpy
-  sphere/cube) with a known, computable surface — no real segmentation
-  output or TotalSegmentator involved.
-- `model.py`: unit tests assemble synthetic per-structure meshes (not real
-  anatomy) into a model and check the right structures ended up in it.
-- `segmentation.py`: tested via mocking/dependency injection — verifies
-  correct invocation and output handling without running the real model.
-- `ingest.py`: tested against a tiny synthetic DICOM directory or a mocked
-  conversion call, not a real scan.
-- Real end-to-end runs (actual TotalSegmentator, actual scan) live in the
-  opt-in integration test tier, not the default suite.
+| Condition | Outcome |
+|---|---|
+| Unknown include name | Reject before inference with valid-name guidance |
+| Expected mask file missing or unreadable | Fatal segmentation-output error |
+| Valid empty default/all-class mask | Skip and record `empty_mask`; do not infer absence of anatomy |
+| Valid empty explicitly requested mask | Fatal requested-structure error naming the class |
+| Some context masks empty | Skip and report unavailable context levels |
+| All context masks empty | Export interests with a prominent missing-context warning |
+| No nonempty interest masks, even if context exists | Fatal: no anatomy of interest to model |
+| Entirely empty scene | Fatal before export |
+
+## Physical geometry and mesh extraction (R4)
+
+Each mask must be a finite, binary 3D image with valid physical units and
+its own valid affine. Use its affine to map marching-cubes voxel vertices
+into RAS+ mm. Never substitute the source scan affine or apply voxel spacing
+twice. P0 requires output masks to match the normalized source shape and
+voxel-to-world mapping within 0.01 mm at all eight voxel-grid corners.
+Reject different grids explicitly; support for resampled output is future
+work. Affines must be finite and invertible. A shared RAS+ convention alone
+does not establish alignment across scans; registration remains deferred.
+
+Extract at level 0.5 with unit voxel spacing. Pad nonempty masks with one
+zero voxel on every side and subtract that padding offset from vertices
+before applying the affine. This closes boundary surfaces. If foreground
+touches the original boundary, mark the structure `clipped` and explain that
+the cap marks scan coverage, not an observed anatomical boundary. Do not
+claim such meshes reconstruct anatomy beyond the scan.
+
+Preserve all components; do not silently remove islands, smooth, or simplify
+exports. Ensure outward winding for the chosen binary convention, reverse
+winding for a negative affine determinant, and recompute world-space normals.
+Reject nonfinite vertices and remove/report degenerate faces consistently.
+“Full fidelity” means the un-decimated mask-derived surface, not a claim of
+segmentation accuracy or subvoxel anatomical truth.
+
+## Export semantics (R5)
+
+Use trimesh to assemble named geometries and write binary PLY. Export both
+the combined mesh and individual class files by default. PLY coordinates
+remain RAS+ mm; document import scale and axis handling for external tools.
+Keep a versioned color mapping in `anatomy.py`, independent of selection or
+iteration order, and write it to the manifest and PLY vertex colors.
+
+Combined PLY concatenates geometry and does not preserve a scene's named
+objects. Named individual files provide separate organ inspection in P0.
+GLB and other formats are deferred until their names/materials/coordinate
+and unit conversions have their own round-trip tests; supporting an export
+method in a dependency is not sufficient acceptance evidence.
+
+## Preview rendering (R6)
+
+Use matplotlib `mplot3d` with `Agg` for software rendering without a display
+or OpenGL context. Its approximate depth sorting is an accepted limitation;
+validate representative combined previews visually before release. Do not
+promise correct interpenetrating-surface occlusion or visibility of every
+structure in the combined image.
+
+Use an orthographic anterior camera looking along -A, with S up and R to
+image-left. Fit bounds with margin while preserving equal units per axis;
+never independently stretch axes to fill the image. Output 1200 by 1200 PNGs
+with a white background, orientation markers, and a structure title or
+combined legend. Use stable organ colors and light gray opaque context;
+avoid transparency as a remedy for depth-sorting limitations. Warn in the
+combined caption that structures may obscure one another. Individual views
+include only the named structure and fit its own extent.
+
+P0 renders the assembled meshes without decimation or face-count budgets.
+Do not reject a preview based on mesh size alone or alter source geometry.
+Actual rendering failures follow the partial-result policy: retain valid
+exports and report the affected preview. Compute-aware optimization is a
+potential P1 investigation, motivated by observed resource limitations or
+timeouts rather than predetermined face counts. No simplification dependency
+or face-reduction accounting is needed in P0.
+
+## Dependencies and device handling (R10, R12)
+
+The README owns the supported-environment information, including operating
+systems, Python versions, devices, and validation status. Unavailable
+requested devices fail preflight. Performance benchmarking and resource
+profiling are potential P1 work; P0 has no runtime or memory release gates.
+
+Declare numpy, nibabel, scikit-image, trimesh, pydicom, dicom2nifti,
+TotalSegmentator, and matplotlib as direct dependencies.
+Add any further direct imports explicitly. Maintain tested versions and
+verify supported wheels in clean environments. Do not rely on transitive
+installation or historical install logs.
+
+## Verification and decision sources
+
+Tests and release evidence are enumerated in `tasks.md`. Synthetic fixtures
+cover physical geometry, selection, structure identity, clipping, failure
+recovery, and rendering. Real-data inference is opt-in and stays local.
+
+The selected libraries keep conversion, geometry, and software rendering
+separate. These are design choices to validate, not claims that alternatives
+cannot work. Upstream references motivating the contracts:
+
+- [TotalSegmentator usage and telemetry](https://github.com/wasserth/TotalSegmentator):
+  task/device/quality settings, weights, and telemetry behavior must be checked
+  against the pinned release.
+- [NiBabel coordinate systems](https://nipy.org/nibabel/coordinate_systems.html):
+  an image's affine maps that image's voxel coordinates to world coordinates.
+- [Trimesh scene export implementation](https://github.com/mikedh/trimesh/blob/main/trimesh/exchange/export.py):
+  combined PLY export converts a scene into a mesh; named objects are not the
+  P0 combined-file contract.

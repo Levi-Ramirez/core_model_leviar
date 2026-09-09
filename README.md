@@ -24,6 +24,21 @@ reasoning behind the landmark and registration choices.
 pip install -e ".[dev]"
 ```
 
+## Supported environments
+
+The planned 3D model generation pipeline is not implemented yet, so these
+are validation targets, not verified support claims. Update this table with
+tested versions and device configurations as implementation is validated.
+
+| Planned environment | Planned devices | Status |
+|---|---|---|
+| Ubuntu 22.04, x86-64, Python 3.10 | CPU, NVIDIA GPU with CUDA | Unverified |
+| macOS 14+, Apple Silicon, Python 3.10 | CPU, MPS | Unverified |
+| Windows 11, x86-64, Python 3.10 | CPU | Unverified |
+
+Performance benchmarking and hardware-specific resource targets are potential
+P1 work; no runtime or memory guarantees are currently established.
+
 ## Test
 
 ```bash

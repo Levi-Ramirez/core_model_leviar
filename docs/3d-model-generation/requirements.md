@@ -1,93 +1,127 @@
 # Requirements: 3D Model Generation
 
-## Purpose
+## Purpose and scope
 
-Given one of a person's CT scans, build a 3D model of their
-abdominal/pelvic anatomy of interest, including their spine for anatomical
-context, that can be viewed and inspected outside a medical imaging
-workstation.
+Build an inspectable 3D model of abdominal/pelvic anatomy from one person's
+local CT scan, including that scan's spine and pelvis for context. The tool
+handles supported raw DICOM input, conversion, TotalSegmentator inference,
+mesh export, and static previews without manual preprocessing.
 
-**Self-contained**: a user brings their own raw CT scan and this feature
-handles the full pipeline itself, including running
-[TotalSegmentator](https://github.com/wasserth/TotalSegmentator) — no
-separate manual pre-processing step required.
+P0 is one scan per invocation, with a CLI and reusable Python library. Each
+model remains in its scan's native physical frame. Hosted uploads, batch
+processing, registration/overlap views, and interactive viewers are future
+work. A common coordinate convention does not align different scans.
 
-## Scope phases
+**Potential P1 — multi-series mesh averaging (exploratory, not committed).**
+Explore running TotalSegmentator on multiple CT series from the same person
+and combining their meshes into an averaged model. This requires evaluating
+alignment, differences in coverage and acquisition, and what mesh averaging
+should mean before specifying or implementing it. It is outside P0.
 
-- **P0 (current)**: a local tool. Runs entirely on the user's own machine —
-  "bring your scans" means pointing the CLI/library at local files, nothing
-  is transmitted anywhere.
-- **Post-P0 (future, not yet started)**:
-  - A hosted web interface with upload and view capabilities.
-  - An **"overlap" view**: merge two scans' meshes into one combined 3D
-    scene so differences can be seen directly, instead of only via separate
-    per-scan models. Deferred until further testing of alignment accuracy.
-  - **Multi-scan / batch invocation**: process a whole scan history in one
-    call. P0's CLI processes one scan per invocation; producing models for
-    several scans means invoking it once per scan.
+**Potential P1 — previews adapted to available compute (exploratory, not
+committed).** Consider preview optimization, including mesh simplification,
+only in response to demonstrated compute limitations or rendering timeouts
+on users' machines. P0 has no face-reduction logic or arbitrary face budgets.
+
+**Potential P1 — performance evaluation (exploratory, not committed).**
+Consider representative-scan benchmarks, runtime and peak-memory profiling,
+and hardware-specific performance targets. P0 does not require performance
+benchmarks or runtime/memory release gates.
+
+This is a visualization tool, not a diagnostic tool or clinical finding.
 
 ## Functional requirements
 
-1. **Input**: raw scan data — a DICOM directory/zip, or a pre-converted
-   NIfTI file. The tool performs DICOM→NIfTI conversion itself when needed.
-2. **Segmentation**: run TotalSegmentator (imported and invoked directly,
-   via its Python API — not assumed to have been run already) on the
-   NIfTI volume to produce a folder of per-structure masks.
-3. **3D mesh construction**: each scan gets its own independent 3D model —
-   its structures of interest plus that same scan's own spine, for
-   anatomical context — built entirely from that scan's own data, in its
-   own native coordinate frame.
-4. **CLI**: a command-line entry point covering the full path from raw
-   scan input to an exported 3D model, for someone who isn't going to
-   import the library directly. Operates on one scan per invocation.
+- **R1 — Input and selection.** Accept a DICOM directory/zip or a 3D NIfTI
+  (`.nii` or `.nii.gz`). List DICOM series and allow explicit selection
+  through both CLI and library. Automatically proceed only when the input
+  contains a single supported CT series. When multiple CT series are
+  present, list them and require explicit selection; do not rank or discard
+  them by orientation. Let the converter validate the selected series'
+  supported geometry and report conversion failures with specific reasons.
+  Do not silently try a different series after failure. P0 supports
+  conventional single-frame CT; reject non-CT DICOM and enhanced multiframe
+  CT. NIfTI inputs must be finite scalar 3D CT volumes with valid physical
+  geometry and known spatial units.
+- **R2 — Segmentation.** Invoke TotalSegmentator's Python API directly with
+  explicit task, quality, device, and per-class output settings. P0 uses
+  task `total`, standard resolution by default, and optional fast quality.
+  Validate class names before inference and validate returned masks.
+- **R3 — Anatomy.** Default to the liver, spleen, kidneys, gallbladder,
+  stomach, pancreas, adrenal glands, duodenum, small bowel, colon, and
+  urinary bladder. Support an explicit include list or an all-classes
+  option. Always request spine-and-pelvis context: cervical, thoracic, and
+  lumbar vertebrae, sacrum, and both hip bones. Each included structure
+  appears exactly once.
+  Report empty, skipped, and unavailable structures distinctly; never
+  silently replace a failed requested structure with context alone.
+- **R4 — Physical geometry.** Extract from each mask using its own affine,
+  normalize physical units to millimeters, and preserve native RAS+
+  coordinates. Reject invalid or inconsistent geometry. Define clipping
+  and empty-mask behavior, preserve disconnected components, and avoid
+  smoothing or decimating exported meshes in P0.
+- **R5 — Exports and identity.** Produce a combined binary `model.ply` plus
+  named `structures/<class>.ply` files, allowing organs to be imported and
+  selected separately. All files use the same coordinates, scale, and
+  stable structure colors. A manifest records names, units, and paths.
+  Combined PLY does not promise named objects or embedded unit metadata.
+- **R6 — Previews.** Produce one PNG per included structure, including
+  context structures, plus one combined PNG. Use a fixed anterior view,
+  equal physical scaling, content-based framing, stable colors, structure
+  labels/legend, and orientation markers. Combined context uses subdued
+  styling. Render the assembled meshes without face reduction in P0 and
+  leave their geometry unchanged; hidden structures remain
+  inspectable through their individual previews and exports.
+- **R7 — Invocation and results.** CLI and library expose the same complete
+  pipeline. Return structured output paths, included/skipped structures,
+  warnings, stage status, and errors. Preserve original inputs, keep owned
+  temporary files available for the duration of processing, and clean them
+  on completion or failure. Reject nonempty output directories before
+  expensive work. Inference, geometry, and export failures are fatal;
+  preview failures retain valid exports and report partial success with
+  the affected previews identified. Never report incomplete output as a
+  complete run.
 
-## Non-functional requirements
+## Operational requirements
 
-- **No patient data or PHI in the repo.** `.gitignore` blocks scan data
-  (`.nii.gz`, `.dcm`, meshes, output dirs) at the filesystem level, but this
-  is also a hard rule for anything written into source, tests, or commit
-  messages — tests must use synthetic data only.
-- **TotalSegmentator is a heavy dependency, and that's an explicit,
-  accepted tradeoff.** It pulls in torch, nnunetv2, and related packages,
-  and needs real compute (GPU strongly recommended) plus a one-time model
-  weight download. This must be documented clearly in the README install
-  instructions.
-- **Open-source-ready.** MIT licensed (changeable later — see `LICENSE`).
-  Code and comments should be understandable by someone who doesn't have
-  this project's chat history — domain terminology preferred over invented
-  names.
-- **UI-agnostic core.** The library (`src/core_model/`) does not assume a
-  CLI is the only caller — keep it importable/callable in a way a future
-  web backend (post-P0) could reuse without a rewrite.
+- **R8 — Local processing.** Scan data and patient metadata stay local.
+  Disable TotalSegmentator usage telemetry before inference. Allow its
+  normal automatic download of missing model weights; document that the
+  first run requires internet access and report download failures clearly.
+  P0 does not promise completely offline execution or require a separate
+  weight-setup command.
+- **R9 — Data handling.** No patient data or PHI in tracked files, fixtures,
+  source, logs committed to Git, or commit messages. `.gitignore` helps
+  exclude untracked artifacts from normal Git operations; it does not
+  prevent filesystem writes or guarantee that data cannot be committed.
+  Use generated fixtures in the default suite. Real scans are permitted
+  only as locally supplied inputs to opt-in integration checks. Avoid
+  patient identifiers and free-text DICOM fields in generated filenames,
+  logs, and manifests. Temporary files must be cleaned on success/failure.
+- **R10 — Supported operation.** State supported operating systems, Python
+  versions, and compute devices in the README, distinguishing tested support
+  from planned targets. Document dependency weight, device/quality choices,
+  and errors for unavailable devices. No silent change of quality or device.
+- **R11 — Reproducibility.** Record application/dependency/model versions,
+  weight identifiers or checksums, resolved settings/device, source and
+  mask geometry, structure outcomes, stage timings,
+  and artifact paths in a local manifest without patient-identifying tags.
+- **R12 — Packaging.** Keep an importable, UI-agnostic core. Declare every
+  directly imported third-party dependency explicitly and maintain a tested
+  version set. Project code is MIT licensed; document dependency/model
+  terms separately. Documentation must stand without chat history.
 
-## Development practices
+## Development and acceptance
 
-These are how we build this, not properties of the delivered system — they
-don't affect what a user experiences, only how the codebase stays
-trustworthy and maintainable as it grows.
+Each implementation task lands with its meaningful synthetic tests. Default
+`pytest` runs offline without real inference; generated files in temporary
+directories are allowed. Real inference checks are marked
+`integration`, opt-in via `pytest -m integration`, and use locally provided
+scans. They never download scans; real inference may download missing model
+weights through TotalSegmentator.
 
-- **Unit tested.** Every module gets tests with synthetic/generated inputs.
-  Tests must run without any external data files or network access (aside
-  from the opt-in integration tier below).
-- **Two-tier testing.** Fast unit tests (the default `pytest` run) use only
-  synthetic, in-memory data and must not invoke the real TotalSegmentator
-  model — the segmentation-invocation module is tested via mocking/
-  dependency injection (correct arguments, correct output handling, correct
-  DICOM→NIfTI conversion logic) instead. A separate, explicitly-marked slow/
-  integration tier (e.g. `pytest -m integration`) may exercise the real
-  model end-to-end, but is opt-in and not part of default CI-style runs.
-- **Incremental commits.** Each module lands in its own commit alongside its
-  tests.
-
-## Explicit non-goals (for P0)
-
-- Not a diagnostic tool. A 3D model is a visualization, not a clinical
-  finding. See the medical disclaimer in the top-level README once written.
-- No hosted/web component (that's post-P0, unscheduled).
-- No GUI in P0 — exported mesh files (PLY by default) are the deliverable;
-  viewing happens in existing external tools (Blender, MeshLab, etc.) until
-  then.
-- No merged/overlaid multi-scan 3D visualization in P0 (that's the post-P0
-  "overlap" view) — each scan's 3D model stands alone.
-- No batch/multi-scan processing in one CLI invocation in P0 (that's
-  post-P0) — one scan per invocation.
+Acceptance covers physical coordinates, assembled export round trips,
+selection and failure behavior, telemetry disabling, preview geometry, and
+cleanup—not merely non-empty files or mocked successful calls. Each
+requirement must have corresponding verification evidence. Incremental
+commits should keep each module and its tests reviewable together.
