@@ -51,9 +51,15 @@ python -m pip install -c requirements/dev-baseline.txt -e ".[dev]"
 ```
 
 The baseline was tested with CPython 3.10.4 on macOS 26.5.2 (Apple Silicon).
-It covers registration and test infrastructure; model-generation dependencies
-will be added and validated with their modules. It is not a cross-platform
-lockfile or evidence that the planned pipeline is supported yet.
+It covers registration, contracts, anatomy selection, and compatibility with
+TotalSegmentator 2.18.0's label map. It is not a cross-platform lockfile or
+evidence that inference or the planned pipeline is supported yet.
+
+TotalSegmentator is a heavy dependency: installation includes PyTorch,
+nnUNet, and imaging libraries. Anatomy tests only read the installed label
+map; they do not import inference code or download model weights. Future
+inference will download missing weights on first use and may benefit from
+a GPU. The anatomy module itself uses only the standard library.
 
 Run synthetic unit tests (no real inference):
 

@@ -30,12 +30,17 @@ order below; no actual scan, output, or identifying log belongs in Git.
     outcomes, portable relative paths, failure status consistency, and
     exclusion of raw metadata/exception records from manifests.
 
-- [ ] **`anatomy.py`: defaults, context, label map, colors (R2, R3, R5).**
+- [x] **`anatomy.py`: defaults, context, label map, colors (R2, R3, R5).**
   - Add the explicit default set, spine-and-pelvis set, stable colors, and a
     versioned supported `total` class map tied to the dependency baseline.
   - Verify actual class membership against the pinned package's local label
     map without loading weights or network. A naming regex is insufficient.
     Test deduplication and color stability across different selections.
+  - Implemented against TotalSegmentator 2.18.0's 117-class map. Constants
+    live in `constants/anatomy_constants.py` and `constants/segmentator_class_map.py`.
+    Selection retains interest/context roles and deduplicates mesh names;
+    versioned colors are independent of selection order. Tests read the
+    installed package's map as data without importing inference code.
 
 - [ ] **`ingest.py`: discover, select, convert, validate (R1, R4, R9).**
   - Implement directory/zip discovery, stable private selection IDs, explicit

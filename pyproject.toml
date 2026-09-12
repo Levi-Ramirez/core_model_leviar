@@ -13,6 +13,7 @@ dependencies = [
     "numpy>=1.24",
     "nibabel>=4.0",
     "scikit-image>=0.21",
+    "TotalSegmentator==2.18.0",
 ]
 
 [project.optional-dependencies]

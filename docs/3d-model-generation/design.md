@@ -19,6 +19,8 @@ transforms if nonidentity transforms are supported later.
 src/core_model/
     constants/
         contracts_constants.py  # run choices, defaults, manifest constants
+        anatomy_constants.py    # default anatomy, context, palette version
+        segmentator_class_map.py      # pinned TotalSegmentator label-map snapshot
     utils/
         validation.py  # shared choice, identifier, and artifact-path checks
     contracts.py     # options, result records, typed errors
@@ -165,7 +167,17 @@ inference may download missing weights, but never downloads scan data.
 `DEFAULT_STRUCTURES` is: `liver`, `spleen`, `kidney_left`, `kidney_right`,
 `gallbladder`, `stomach`, `pancreas`, `adrenal_gland_left`,
 `adrenal_gland_right`, `duodenum`, `small_bowel`, `colon`, `urinary_bladder`.
-Verify this set against the pinned `total` task before release.
+This set is verified against TotalSegmentator 2.18.0's `total` task. The
+read-only label-map snapshot contains all 117 class IDs/names; tests compare
+it with the installed package without executing its inference code.
+
+`resolve_selection(options)` returns interest and context names separately,
+plus a deduplicated `structures` property for extraction. It rejects unknown
+names before inference; mask availability remains the model stage's concern.
+`structure_color(name)` uses explicit colors for default organs, light gray
+for context, and deterministic name-derived colors for other classes. Palette
+version 1 is stable across processes and selections; it does not encode
+confidence or guarantee that all 117 classes have perceptually distinct colors.
 
 `SPINE_AND_PELVIS_STRUCTURES` contains `vertebrae_C1` through `vertebrae_C7`,
 `vertebrae_T1` through `vertebrae_T12`, `vertebrae_L1` through `vertebrae_L5`,
