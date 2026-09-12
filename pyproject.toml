@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "pytest-socket>=0.7"]
 
 [project.scripts]
 core-model = "core_model.cli:main"
@@ -26,3 +26,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = '-m "not integration" --strict-markers --disable-socket'
+required_plugins = ["pytest-socket>=0.7"]
+markers = [
+    "integration: opt-in tests using a locally supplied scan and real inference",
+]

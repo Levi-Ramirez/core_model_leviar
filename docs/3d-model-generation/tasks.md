@@ -1,11 +1,11 @@
 # Tasks: 3D Model Generation
 
-Implement the contracts in `requirements.md` and `design.md`. All tasks are
-pending; document changes are not evidence of a working pipeline. Land each
+Implement the contracts in `requirements.md` and `design.md`. Checkboxes track
+completed work; document changes are not evidence of a working pipeline. Land each
 module with its tests in reviewable increments. Dependencies follow the
 order below; no actual scan, output, or identifying log belongs in Git.
 
-- [ ] **Test infrastructure and dependency baseline (R8, R10, R12).**
+- [x] **Test infrastructure and dependency baseline (R8, R10, R12).**
   - Register `integration`; default pytest excludes it, explicit
     `pytest -m integration` selects it. Confirm both collection behaviors.
   - Establish a tested dependency version set, with direct imports declared
@@ -14,6 +14,11 @@ order below; no actual scan, output, or identifying log belongs in Git.
     allowed. Integration requires an explicitly supplied local scan; a missing scan
     skips with actionable guidance. Real inference may download missing
     weights through TotalSegmentator.
+  - Implemented with registered marker/default selection, `pytest-socket`,
+    and `local_scan_path` / `--scan-path`. Synthetic subprocess tests verify
+    selection, socket controls, and scan prerequisites. The tested current
+    dependency set is in `requirements/dev-baseline.txt`; dependencies for
+    future modules are added and validated when those modules land.
 
 - [ ] **`contracts.py`: options, results, errors (R7, R11).**
   - Implement options, candidate records, structure outcomes, generation
