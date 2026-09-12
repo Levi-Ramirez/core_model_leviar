@@ -51,8 +51,9 @@ python -m pip install -c requirements/dev-baseline.txt -e ".[dev]"
 ```
 
 The baseline was tested with CPython 3.10.4 on macOS 26.5.2 (Apple Silicon).
-It covers registration, contracts, anatomy selection, and compatibility with
-TotalSegmentator 2.18.0's label map. It is not a cross-platform lockfile or
+It covers registration, contracts, anatomy selection, synthetic DICOM/NIfTI
+ingestion, and compatibility with TotalSegmentator 2.18.0's label map.
+It is not a cross-platform lockfile or
 evidence that inference or the planned pipeline is supported yet.
 
 TotalSegmentator is a heavy dependency: installation includes PyTorch,
@@ -64,7 +65,20 @@ a GPU. The anatomy module itself uses only the standard library.
 Run synthetic unit tests (no real inference):
 
 ```bash
-pytest
+# From the repository root, with the virtual environment activated:
+python -m pytest -q
+```
+
+The equivalent command without activating the environment is:
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+To run only the DICOM/NIfTI ingestion tests:
+
+```bash
+.venv/bin/python -m pytest tests/test_ingest.py -q
 ```
 
 Default runs exclude the registered `integration` marker. `pytest-socket`

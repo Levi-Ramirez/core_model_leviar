@@ -72,7 +72,12 @@ class SeriesCandidate:
 
 @dataclass(frozen=True)
 class StageIssue:
-    """A stable reason code; user-facing explanations belong at presentation time."""
+    """A stable reason code for a pipeline warning or error.
+
+    Input: A pipeline stage, non-identifying reason code, and optional class name.
+    Output: An immutable issue record; user-facing explanations belong at
+        presentation time.
+    """
 
     stage: Stage
     reason: str
@@ -87,7 +92,11 @@ class StageIssue:
 
 @dataclass(frozen=True)
 class ImageGeometry:
-    """Normalized image geometry; detailed affine/grid validation lives in ingest."""
+    """Normalized image geometry in millimeters.
+
+    Input: Three-dimensional shape, 4-by-4 voxel-to-world affine, and units.
+    Output: An immutable geometry record; detailed grid validation lives in ingest.
+    """
 
     shape: tuple[int, int, int]
     affine: tuple[tuple[float, ...], ...]
@@ -134,7 +143,11 @@ class StructureOutcome:
 
 @dataclass(frozen=True)
 class Artifact:
-    """One successfully written file, relative to the output directory."""
+    """One successfully written file, relative to the output directory.
+
+    Input: A portable relative path, artifact kind, and optional class name.
+    Output: An immutable artifact record suitable for a manifest.
+    """
 
     path: str
     kind: ArtifactKind
@@ -182,6 +195,9 @@ def _validate_finished_status(status, structures, errors):
 class GenerationManifest:
     """Schema v1 run provenance. Only completed artifacts belong in artifacts.
 
+    Input: Run options, status, provenance, structure outcomes, issues, timings,
+        and completed artifact records.
+    Output: A validated manifest record and schema-v1 JSON through ``to_json``.
     Fields may be absent while a run is starting or after an early failure.
     Filesystem writes and stage transitions are the pipeline's responsibility.
     """
@@ -199,6 +215,11 @@ class GenerationManifest:
     stage_timings: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
+        """Validate and serialize the manifest to a JSON-compatible mapping.
+
+        Input: The manifest fields stored on this instance.
+        Output: A dictionary containing only the public schema-v1 manifest fields.
+        """
         if type(self.options) is not GenerationOptions:
             raise ValueError("Options must be a GenerationOptions record")
         if self.source_geometry is not None and type(self.source_geometry) is not ImageGeometry:
@@ -216,12 +237,22 @@ class GenerationManifest:
         return {"schema_version": MANIFEST_SCHEMA_VERSION, "task": SEGMENTATION_TASK, **asdict(self)}
 
     def to_json(self) -> str:
+        """Serialize the validated manifest as deterministic JSON.
+
+        Input: The manifest fields stored on this instance.
+        Output: A newline-terminated JSON string.
+        """
         return json.dumps(self.to_dict(), indent=2, sort_keys=True, allow_nan=False) + "\n"
 
 
 @dataclass
 class GenerationResult:
-    """Returned to callers; local output paths are not manifest provenance."""
+    """Returned to callers; local output paths are not manifest provenance.
+
+    Input: Output directory, completion status, artifacts, structure outcomes,
+        warnings, errors, and stage timings.
+    Output: A validated caller-facing result with convenience properties.
+    """
 
     output_dir: Path
     status: ResultStatus
@@ -253,7 +284,11 @@ class GenerationResult:
         return {s.name: s.reason for s in self.structures if s.status == "skipped"}
 
     def to_dict(self) -> dict:
-        """Serialize a caller-facing result, including its local output directory."""
+        """Serialize a caller-facing result, including its local output directory.
+
+        Input: The result fields stored on this instance.
+        Output: A JSON-compatible mapping containing local output paths.
+        """
         self.__post_init__()
         data = asdict(self)
         data["output_dir"] = str(self.output_dir)
@@ -264,6 +299,8 @@ class GenerationResult:
 class GenerationError(Exception):
     """Fatal stage failure with a safe reason code and optional local results.
 
+    Input: A pipeline stage, safe reason code, and optional manifest path/result.
+    Output: An exception carrying a ``StageIssue`` and optional local result.
     Do not pass upstream exception text as reason. Exception chaining may be
     used internally, but CLI/logging must display only the safe issue record.
     """

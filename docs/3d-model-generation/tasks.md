@@ -42,7 +42,7 @@ order below; no actual scan, output, or identifying log belongs in Git.
     versioned colors are independent of selection order. Tests read the
     installed package's map as data without importing inference code.
 
-- [ ] **`ingest.py`: discover, select, convert, validate (R1, R4, R9).**
+- [x] **`ingest.py`: discover, select, convert, validate (R1, R4, R9).**
   - Implement directory/zip discovery, stable private selection IDs, explicit
     selection, automatic processing only for a single supported CT series,
     and candidate errors with rerun commands. Multiple CT series require
@@ -62,6 +62,14 @@ order below; no actual scan, output, or identifying log belongs in Git.
     equivalent directory/zip IDs. Test that converter validation stays enabled.
   - Test NIfTI passthrough, invalid dimensions, nonfinite values, singular or
     conflicting forms, unknown units, and meter/micron normalization.
+  - Implemented with real synthetic DICOM conversion tests checking known
+    RAS landmarks and HU values in axial and non-axial series. Tests cover
+    selection, archive safety, safe error records, converter validation,
+    cleanup, and NIfTI normalization. No real scan or inference is involved.
+  - A file pydicom does not recognize as DICOM at all (e.g. `.DS_Store`, a
+    common artifact of zipping a scan on macOS) is skipped and named in a
+    logged warning rather than rejecting the whole input; symlinks and
+    files that look like DICOM but fail to read remain fatal.
 
 - [ ] **`segmentation.py`: inference and model weights (R2, R8, R10).**
   - Invoke TotalSegmentator with explicit task/quality/device/output settings,

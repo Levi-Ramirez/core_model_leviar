@@ -49,7 +49,12 @@ class AnatomySelection:
 
 
 def resolve_selection(options: GenerationOptions) -> AnatomySelection:
-    """Resolve names before inference; mask presence is assessed later by model.py."""
+    """Resolve names before inference; mask presence is assessed later by model.py.
+
+    Input: Generation options containing the include/all-structures selection.
+    Output: An ``AnatomySelection`` with interest and context names, or a
+        ``ValueError`` for an unknown class.
+    """
     if options.all_structures:
         interests = SUPPORTED_STRUCTURES
     elif options.include is not None:
@@ -66,7 +71,11 @@ def resolve_selection(options: GenerationOptions) -> AnatomySelection:
 
 
 def structure_color(name: str) -> tuple[int, int, int]:
-    """Return the same RGB color for a class in every selection and artifact."""
+    """Return the same RGB color for a class in every selection and artifact.
+
+    Input: A supported TotalSegmentator class name.
+    Output: An RGB tuple with integer channels from 0 through 255.
+    """
     try:
         return STRUCTURE_COLORS[name]
     except KeyError:

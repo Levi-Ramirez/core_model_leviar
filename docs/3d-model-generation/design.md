@@ -21,8 +21,11 @@ src/core_model/
         contracts_constants.py  # run choices, defaults, manifest constants
         anatomy_constants.py    # default anatomy, context, palette version
         segmentator_class_map.py      # pinned TotalSegmentator label-map snapshot
+        ingest_constants.py    # unit scales, form tolerance, converter error codes
     utils/
         validation.py  # shared choice, identifier, and artifact-path checks
+        archive.py     # safe extraction into a new owned directory
+        nifti.py       # volume validation and spatial-unit normalization
     contracts.py     # options, result records, typed errors
     anatomy.py       # supported classes, defaults, context, stable colors
     ingest.py        # discovery, selection, conversion, input validation
@@ -105,6 +108,17 @@ validated by the anatomy module; geometry/grid correctness by ingest/mesh.
 Choose `dicom2nifti` for conversion and `pydicom` for discovery. Keeping
 selection separate makes ambiguity actionable through the same input path.
 
+`list_series(input_path)` returns public candidate records and cleans up zip
+extraction before returning. `ingest(input_path, workspace, series_id=None)`
+returns an `IngestedVolume` with `nifti_path`, millimeter `geometry`, and the
+selected candidate (or `None` for NIfTI). The workspace must already exist
+outside the input directory. Ingest creates its own subdirectory, cleans it
+on failure, and leaves successful converted volumes for the caller to use
+and eventually remove. Already-valid millimeter NIfTI inputs pass through
+without a copy. `IngestError` extends `GenerationError` with candidate records
+and safe selection-command templates; these use local `SCAN_INPUT` and
+`MODEL_OUTPUT` variables instead of exposing input paths in error text.
+
 Group by StudyInstanceUID and SeriesInstanceUID using `pydicom`. P0 supports
 conventional single-frame CT; reject non-CT data and enhanced multiframe CT
 with explicit reasons. Discovery identifies series, not the best acquisition
@@ -126,10 +140,34 @@ Do not automatically retry another series after conversion failure. Users
 can select another series from the same input without manually splitting or
 externally converting their files.
 
+Discovery reads DICOM Part 10 files recursively. It explicitly excludes a
+recognized DICOMDIR index, but reports every other unrecognized or malformed
+file instead of silently skipping it. It does not force-read headerless DICOM.
+The implementation keeps the stages separate: `validate_dicom_file(path)` is
+a no-return gate that runs first, and `extract_dicom_meta_data(path)` reads the
+validated header and returns only the internal grouping metadata used by
+discovery.
+Conversion
+uses the installed converter's duplicate/localizer handling: identical
+duplicate slices can be removed by the converter. No custom geometry repair
+or series ranking is added. If a caller has disabled required converter
+validation or enabled resampling/forced reads, ingest reports a settings
+error without changing that global configuration. Known conversion errors
+map to safe reason codes; unexpected upstream failures use
+`dicom_conversion_failed` without exposing exception text. In dicom2nifti
+2.6.2 an all-localizer series can raise IndexError; this is a failed
+conversion, never permission to try another series.
+
 Zip extraction rejects absolute paths, traversal, and symlink entries;
 extract into the owned workspace. Directory and zip discovery must produce
-the same IDs for the same series. Unrelated files are ignored; malformed
-DICOM candidates are reported without leaking identifying metadata.
+the same IDs for the same series. A recognized DICOMDIR index is excluded
+from discovery. A file pydicom does not recognize as DICOM at all (e.g. a
+filesystem artifact such as `.DS_Store`, left behind by how a user zipped
+their scan) is not fatal: it is skipped and named in a logged warning,
+rather than rejecting an otherwise-valid scan for carrying one unrelated
+file. Symlinks and files that look like DICOM but fail to read remain
+fatal, since those indicate a real problem rather than incidental clutter.
+Errors are reported without leaking identifying metadata.
 
 NIfTI input must be a finite, scalar 3D CT volume with at least two samples
 per axis and usable physical geometry. Reject 4D, nonfinite, or singular
