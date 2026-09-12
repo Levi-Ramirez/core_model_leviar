@@ -17,6 +17,10 @@ transforms if nonidentity transforms are supported later.
 
 ```text
 src/core_model/
+    constants/
+        contracts_constants.py  # run choices, defaults, manifest constants
+    utils/
+        validation.py  # shared choice, identifier, and artifact-path checks
     contracts.py     # options, result records, typed errors
     anatomy.py       # supported classes, defaults, context, stable colors
     ingest.py        # discovery, selection, conversion, input validation
@@ -82,6 +86,17 @@ dependencies, model task and weight checksum/identifier, image shape/affine/
 units, mask geometry, candidate ID, structure outcomes and colors, clipping
 warnings, timings, and relative artifact paths. Exclude
 original input paths, patient tags, and raw exception text containing them.
+
+`contracts.py` provides `SeriesCandidate`, `ImageGeometry`, `StructureOutcome`,
+`Artifact`, and `StageIssue` records alongside options, results, and errors.
+`GenerationManifest.to_json()` writes schema-v1 JSON with fixed task `total`;
+filesystem writes remain the pipeline's responsibility. `StageIssue` carries
+a stable reason code and optional class name, not an upstream error message.
+Callers provide non-identifying software/model metadata; serialization is
+not a general-purpose patient-data scrubber. `GenerationResult.to_dict()` is
+caller-facing and includes the local output directory and manifest path;
+it must not be used in place of manifest serialization. Class membership is
+validated by the anatomy module; geometry/grid correctness by ingest/mesh.
 
 ## Input validation and selection (R1)
 

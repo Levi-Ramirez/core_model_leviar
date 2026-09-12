@@ -20,11 +20,15 @@ order below; no actual scan, output, or identifying log belongs in Git.
     dependency set is in `requirements/dev-baseline.txt`; dependencies for
     future modules are added and validated when those modules land.
 
-- [ ] **`contracts.py`: options, results, errors (R7, R11).**
+- [x] **`contracts.py`: options, results, errors (R7, R11).**
   - Implement options, candidate records, structure outcomes, generation
     results, stage errors, and versioned manifest serialization as designed.
   - Test option conflicts, invalid empty includes, result serialization,
     relative artifact paths, and exclusion of identifying input metadata.
+  - Implemented using standard-library dataclasses and schema-v1 JSON.
+    Tests cover selection snapshots, candidate support status, structure
+    outcomes, portable relative paths, failure status consistency, and
+    exclusion of raw metadata/exception records from manifests.
 
 - [ ] **`anatomy.py`: defaults, context, label map, colors (R2, R3, R5).**
   - Add the explicit default set, spine-and-pelvis set, stable colors, and a
