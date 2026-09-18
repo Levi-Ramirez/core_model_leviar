@@ -86,7 +86,7 @@ order below; no actual scan, output, or identifying log belongs in Git.
     and safe errors distinguish setup, download, device, inference, and output
     failures. Tests mock inference and remain offline.
 
-- [ ] **`mesh.py`: physical surfaces (R4).**
+- [x] **`mesh.py`: physical surfaces (R4).**
   - Extract at level 0.5 using each mask's affine; implement grid validation,
     unit handling, boundary padding/offset correction, clipped warnings,
     outward winding, and normals. Preserve components and export detail.
@@ -95,6 +95,12 @@ order below; no actual scan, output, or identifying log belongs in Git.
     synthetic landmarks. Test empty/all-foreground masks, boundary-touching
     masks, disconnected components, nonbinary values, degenerate geometry,
     and nonfinite affines. Check bounds and outward normals, not only counts.
+  - Implemented affine-aware marching-cubes extraction with millimeter unit
+    normalization, source-grid checks, boundary padding/clipping warnings,
+    component preservation, reflected-affine winding correction, and finite
+    geometry validation. Added `trimesh` as a direct dependency and synthetic
+    tests for physical bounds, clipping, reflections, invalid masks, and grid
+    mismatches.
 
 - [ ] **`model.py`: structure outcomes and PLY artifacts (R3, R5).**
   - Assemble named Scene geometry once, with the designed selection/default/
