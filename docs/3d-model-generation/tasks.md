@@ -71,7 +71,7 @@ order below; no actual scan, output, or identifying log belongs in Git.
     logged warning rather than rejecting the whole input; symlinks and
     files that look like DICOM but fail to read remain fatal.
 
-- [ ] **`segmentation.py`: inference and model weights (R2, R8, R10).**
+- [x] **`segmentation.py`: inference and model weights (R2, R8, R10).**
   - Invoke TotalSegmentator with explicit task/quality/device/output settings,
     disable usage telemetry using its supported configuration, and validate
     per-class outputs. Leave unrelated settings unchanged and allow normal
@@ -80,6 +80,11 @@ order below; no actual scan, output, or identifying log belongs in Git.
     disabled before inference, download-failure reporting, unavailable-device
     errors, invalid includes, missing outputs, and inference failures. Mock
     inference and downloads so unit tests remain offline.
+  - Implemented the pinned TotalSegmentator Python API adapter with explicit
+    `total` task, quality, device, and output settings. Telemetry is disabled
+    during inference, requested masks are validated as finite 3D NIfTI volumes,
+    and safe errors distinguish setup, download, device, inference, and output
+    failures. Tests mock inference and remain offline.
 
 - [ ] **`mesh.py`: physical surfaces (R4).**
   - Extract at level 0.5 using each mask's affine; implement grid validation,
