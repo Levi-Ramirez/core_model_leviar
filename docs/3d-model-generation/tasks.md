@@ -102,7 +102,7 @@ order below; no actual scan, output, or identifying log belongs in Git.
     tests for physical bounds, clipping, reflections, invalid masks, and grid
     mismatches.
 
-- [ ] **`model.py`: structure outcomes and PLY artifacts (R3, R5).**
+- [x] **`model.py`: structure outcomes and PLY artifacts (R3, R5).**
   - Assemble named Scene geometry once, with the designed selection/default/
     all/context semantics. Export combined and named individual binary PLYs
     in common RAS+ mm coordinates with stable vertex colors.
@@ -113,6 +113,10 @@ order below; no actual scan, output, or identifying log belongs in Git.
     colored structures through combined and individual exports. Check
     placement, scale, colors, bounds, and name-to-file manifest mapping.
     Assert scene names in memory; do not assert named objects in combined PLY.
+  - Implemented named `trimesh.Scene` assembly, stable vertex colors, binary
+    combined and per-structure PLY exports, and explicit missing/empty
+    interest/context outcomes. Tests cover round-trip colors and geometry,
+    context warnings, requested empty masks, and empty-interest failures.
 
 - [ ] **`render.py`: legible previews (R6, R10).**
   - Render the existing Scene into labeled 1200 x 1200 anterior PNGs with
