@@ -99,10 +99,53 @@ Integration tests that need model-weight downloads also use
 `@pytest.mark.enable_socket`; network access remains blocked otherwise.
 Mock inference and downloads in unit tests.
 
-No real-inference integration tests exist yet. The test-infrastructure suite
-verifies selection, network controls, and scan-input handling with temporary
-synthetic test projects. A direct `pytest -m integration` currently selects
-no tests (pytest exit code 5).
+## CLI usage
+
+List the DICOM series before generating a model:
+
+```bash
+.venv/bin/python -m core_model.cli list-series /path/to/scan
+```
+
+For a directory containing exactly one supported CT series, generate directly:
+
+```bash
+.venv/bin/python -m core_model.cli generate /path/to/scan \
+  --output /path/to/model-output
+```
+
+If multiple series are present, use the `series_<id>` shown by `list-series`:
+
+```bash
+.venv/bin/python -m core_model.cli generate /path/to/scan \
+  --output /path/to/model-output \
+  --series series_0123456789abcdef
+```
+
+You can select structures, request all supported structures, and choose the
+compute device and quality explicitly:
+
+```bash
+.venv/bin/python -m core_model.cli generate /path/to/scan \
+  --output /path/to/model-output \
+  --include liver spleen kidney_left kidney_right \
+  --device cpu \
+  --quality standard
+```
+
+The output directory must be new or empty. A successful run writes
+`manifest.json`, `model.ply`, individual files under `structures/`, and PNG
+previews under `previews/`. The first inference run may download
+TotalSegmentator weights and therefore requires internet access. Input scans
+remain local; do not place real scan data in the repository.
+
+The CLI returns exit code 0 for completion, 1 for fatal inference or export
+failures, 2 for invalid input or series selection, and 3 when exports succeed
+but one or more previews fail.
+
+No real-inference integration test is committed yet. The test-infrastructure
+suite verifies selection, network controls, and scan-input handling with
+temporary synthetic test projects.
 
 ## License
 

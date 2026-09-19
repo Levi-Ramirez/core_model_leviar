@@ -153,13 +153,17 @@ order below; no actual scan, output, or identifying log belongs in Git.
     cleanup. Tests cover stage wiring, manifest creation, and nonempty-output
     rejection with mocked inference.
 
-- [ ] **`cli.py`: thin adapter (R1, R7, R8).**
+- [x] **`cli.py`: thin adapter (R1, R7, R8).**
   - Expose `core-model generate INPUT --output DIR`, `--series ID`, mutually
     exclusive `--include NAME ...` / `--all-structures`, `--device`, and
     `--quality`. Expose `core-model list-series INPUT` separately.
   - Test argument parsing, candidate rerun instructions, option forwarding,
     stage summaries, and exit codes 0/1/2/3. The CLI calls the library pipeline;
     it does not duplicate orchestration. No interactive selection is required.
+  - Implemented `generate` and `list-series` commands as a thin adapter over
+    the library APIs. Selection guidance, safe stage summaries, mutually
+    exclusive anatomy options, and exit codes 0/1/2/3 are covered by offline
+    parser and forwarding tests.
 
 - [ ] **Release integration (R1–R12).**
   - Run a locally supplied scan with actual inference, allowing normal weight
