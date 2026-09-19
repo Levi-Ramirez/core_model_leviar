@@ -2,7 +2,7 @@
 
 from typing import Literal, get_args
 
-Stage = Literal["ingest", "segmentation", "mesh", "model", "render"]
+Stage = Literal["generation", "ingest", "segmentation", "mesh", "model", "render"]
 Device = Literal["cpu", "gpu", "mps"]
 Quality = Literal["standard", "fast"]
 SupportStatus = Literal["unverified", "unsupported"]

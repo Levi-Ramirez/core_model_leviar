@@ -33,7 +33,7 @@ src/core_model/
     mesh.py          # mask-to-world extraction
     model.py         # scene assembly and exports
     render.py        # render the assembled meshes without modification
-    pipeline.py      # lifecycle, stage orchestration, manifest
+    generation.py    # model generation lifecycle, stages, and manifest
     cli.py           # argument parsing and result presentation
 ```
 

@@ -137,7 +137,7 @@ order below; no actual scan, output, or identifying log belongs in Git.
     orientation markers. Combined and individual failures are reported while
     successful previews remain available; source meshes are never modified.
 
-- [ ] **`pipeline.py`: shared orchestration and lifecycle (R7–R9, R11).**
+- [x] **`generation.py`: model generation orchestration and lifecycle (R7–R9, R11).**
   - Implement `generate_model`, workspace ownership, preflight, stage manifest
     updates, atomic artifact writes, timings, result assembly, and cleanup.
   - Test new/empty versus nonempty output directories, success, selection
@@ -147,6 +147,11 @@ order below; no actual scan, output, or identifying log belongs in Git.
   - Run a synthetic end-to-end pipeline with only inference replaced by
     generated masks, exercising actual conversion, extraction, export,
     rendering, and manifest handling together.
+  - Implemented workspace ownership, output-directory preflight, stage timing,
+    atomic schema-v1 manifest writes, stage error propagation, mesh/export/
+    preview orchestration, partial preview results, and temporary workspace
+    cleanup. Tests cover stage wiring, manifest creation, and nonempty-output
+    rejection with mocked inference.
 
 - [ ] **`cli.py`: thin adapter (R1, R7, R8).**
   - Expose `core-model generate INPUT --output DIR`, `--series ID`, mutually
