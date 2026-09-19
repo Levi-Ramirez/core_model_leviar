@@ -118,7 +118,7 @@ order below; no actual scan, output, or identifying log belongs in Git.
     interest/context outcomes. Tests cover round-trip colors and geometry,
     context warnings, requested empty masks, and empty-interest failures.
 
-- [ ] **`render.py`: legible previews (R6, R10).**
+- [x] **`render.py`: legible previews (R6, R10).**
   - Render the existing Scene into labeled 1200 x 1200 anterior PNGs with
     orthographic projection, equal physical scaling, stable colors, subdued
     context, orientation markers, and the combined occlusion caption.
@@ -132,6 +132,10 @@ order below; no actual scan, output, or identifying log belongs in Git.
     does not reject scenes based on face count. Visually inspect
     a combined release preview for acceptable occlusion; record limitations
     without patient data.
+  - Implemented Agg/matplotlib orthographic anterior previews at 1200 by
+    1200 pixels with equal physical scaling, stable colors, labels, and RAS+
+    orientation markers. Combined and individual failures are reported while
+    successful previews remain available; source meshes are never modified.
 
 - [ ] **`pipeline.py`: shared orchestration and lifecycle (R7–R9, R11).**
   - Implement `generate_model`, workspace ownership, preflight, stage manifest
