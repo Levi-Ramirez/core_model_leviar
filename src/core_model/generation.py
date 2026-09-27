@@ -3,6 +3,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import time
+from typing import Callable
 
 from core_model.anatomy import resolve_selection
 from core_model.constants.contracts_constants import MANIFEST_FILENAME
@@ -42,13 +43,15 @@ def _fail(output_dir: Path, manifest: GenerationManifest, stage: str, reason: st
 
 
 def generate_model(input_path: str | Path, output_dir: str | Path,
-                   options: GenerationOptions | None = None) -> GenerationResult:
+                   options: GenerationOptions | None = None,
+                   progress: Callable[[str, str], None] | None = None) -> GenerationResult:
     """Generate meshes and previews from one local scan.
 
     Input:
         input_path: DICOM directory/zip or validated NIfTI input.
         output_dir: New or empty caller-owned directory for final artifacts.
         options: Generation settings, defaulting to CPU standard quality.
+        progress: Optional callback receiving ``(stage, state)`` updates.
     Output:
         A complete or partial ``GenerationResult``; fatal stage errors raise.
     """
@@ -60,27 +63,35 @@ def generate_model(input_path: str | Path, output_dir: str | Path,
     manifest = GenerationManifest(options=options, resolved_device=options.device)
     _write_manifest(output_dir, manifest)
     system_timings = {}
+    def notify(stage, state):
+        if progress is not None:
+            progress(stage, state)
     try:
         with TemporaryDirectory(prefix="workspace-", dir=output_dir) as workspace_name:
             workspace = Path(workspace_name)
             started = time.monotonic()
+            notify("ingest", "started")
             volume = ingest(input_path, workspace, series_id=options.series_id)
             system_timings["ingest"] = time.monotonic() - started
+            notify("ingest", "completed")
             manifest.source_geometry = volume.geometry
             _write_manifest(output_dir, manifest)
 
             selection = resolve_selection(options)
             started = time.monotonic()
             (workspace / "segmentation").mkdir()
+            notify("segmentation", "started (first run may download model weights)")
             segmentation = segment(
                 volume.nifti_path, workspace / "segmentation", selection.structures,
                 device=options.device, quality=options.quality,
             )
             system_timings["segmentation"] = time.monotonic() - started
+            notify("segmentation", "completed")
             _write_manifest(output_dir, manifest)
 
             meshes, empty = {}, set()
             started = time.monotonic()
+            notify("mesh", "started")
             for name, path in segmentation.masks.items():
                 try:
                     meshes[name] = extract_mesh(
@@ -93,6 +104,8 @@ def generate_model(input_path: str | Path, output_dir: str | Path,
                     else:
                         raise GenerationError("mesh", error.reason) from None
             system_timings["mesh"] = time.monotonic() - started
+            notify("mesh", "completed")
+            notify("model", "started")
             try:
                 model = assemble_model(
                     selection, meshes, output_dir, empty_structures=frozenset(empty),
@@ -101,10 +114,13 @@ def generate_model(input_path: str | Path, output_dir: str | Path,
             except ModelError as error:
                 raise GenerationError("model", error.reason) from None
             system_timings["model"] = time.monotonic() - started
+            notify("model", "completed")
 
             started = time.monotonic()
+            notify("render", "started")
             previews = render_previews(model.scene, output_dir / "previews", names=selection.structures)
             system_timings["render"] = time.monotonic() - started
+            notify("render", "completed")
             artifacts = list(model.artifacts)
             for name, path in previews.paths.items():
                 if name == "combined":

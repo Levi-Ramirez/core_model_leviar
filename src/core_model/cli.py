@@ -72,7 +72,10 @@ def main(argv=None) -> int:
             device=args.device,
             quality=args.quality,
         )
-        result = generate_model(args.input, args.output, options)
+        def progress(stage, state):
+            print(f"[{stage}] {state}", file=sys.stderr, flush=True)
+
+        result = generate_model(args.input, args.output, options, progress=progress)
     except ValueError as error:
         print(f"invalid arguments: {error}", file=sys.stderr)
         return 2

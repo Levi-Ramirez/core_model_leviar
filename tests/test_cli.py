@@ -7,7 +7,7 @@ from core_model.contracts import GenerationError, GenerationResult, StageIssue
 def test_generate_forwards_options_and_returns_success(monkeypatch, tmp_path, capsys):
     captured = {}
 
-    def fake_generate(input_path, output_dir, options):
+    def fake_generate(input_path, output_dir, options, **kwargs):
         captured.update(input_path=input_path, output_dir=output_dir, options=options)
         return GenerationResult(Path(output_dir), "complete")
 
@@ -32,7 +32,7 @@ def test_list_series_prints_safe_candidates(monkeypatch, capsys):
 def test_selection_error_prints_rerun_and_returns_two(monkeypatch, capsys):
     error = GenerationError("ingest", "series_selection_required")
     error.candidates = ()
-    monkeypatch.setattr(cli, "generate_model", lambda *args: (_ for _ in ()).throw(error))
+    monkeypatch.setattr(cli, "generate_model", lambda *args, **kwargs: (_ for _ in ()).throw(error))
     assert cli.main(["generate", "scan", "--output", "out"]) == 2
     assert "ingest: series_selection_required" in capsys.readouterr().err
 
@@ -41,6 +41,6 @@ def test_partial_result_returns_three(monkeypatch, tmp_path, capsys):
     result = GenerationResult(
         tmp_path, "partial", errors=[StageIssue("render", "preview_failed")],
     )
-    monkeypatch.setattr(cli, "generate_model", lambda *args: result)
+    monkeypatch.setattr(cli, "generate_model", lambda *args, **kwargs: result)
     assert cli.main(["generate", "scan", "--output", "out"]) == 3
     assert "status: partial" in capsys.readouterr().out

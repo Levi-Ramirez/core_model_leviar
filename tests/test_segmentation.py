@@ -32,7 +32,7 @@ def test_segment_passes_explicit_full_task_settings_and_validates_masks(tmp_path
     assert calls[0][1] == {
         "output": output_dir, "task": "total", "fast": True, "device": "cpu",
         "roi_subset": None, "preview": False, "statistics": False,
-        "radiomics": False, "output_type": "nifti", "quiet": True, "verbose": False,
+        "radiomics": False, "output_type": "nifti", "quiet": False, "verbose": False,
     }
 
 

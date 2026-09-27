@@ -143,7 +143,8 @@ def segment(input_path: Path, output_dir: Path, structures: Iterable[str], *,
                 statistics=False,
                 radiomics=False,
                 output_type="nifti",
-                quiet=True,
+                # Keep upstream model/download progress visible to CLI users.
+                quiet=False,
                 verbose=False,
             )
     except SegmentationError:
