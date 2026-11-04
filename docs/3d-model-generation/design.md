@@ -275,18 +275,27 @@ method in a dependency is not sufficient acceptance evidence.
 
 ## Preview rendering (R6)
 
-Use matplotlib `mplot3d` with `Agg` for software rendering without a display
-or OpenGL context. Its approximate depth sorting is an accepted limitation;
-validate representative combined previews visually before release. Do not
-promise correct interpenetrating-surface occlusion or visibility of every
-structure in the combined image.
+Draw anatomy with PyVista (VTK) off screen and lay out titles, legends, and the
+orientation guide around it with matplotlib `Agg`. On one real scan (about 2.2
+million triangles, 25 previews) this took about 20 seconds, against 873 seconds
+with matplotlib `mplot3d`, whose whole-triangle depth sorting also misordered
+organs. The cost is an OpenGL requirement: desktops and laptops normally have it;
+machines without a display need extra setup. Previews target the former.
+
+A missing display or OpenGL driver can crash the process that opens the render
+window rather than raise. Render in one spawned worker process, importing PyVista
+only there, so a crash cannot end the run. Report the affected previews as
+`renderer_unavailable`, retain exports, and finish with a partial result. Other
+failures for a single preview report `preview_failed`. Validate representative
+combined previews visually before release; the combined image cannot guarantee
+visibility of every structure.
 
 Use an orthographic anterior-oblique camera on the +A side of RAS+ space
 (elevation 18 degrees, azimuth 65 degrees), with directional surface lighting.
-Frame the camera on the projected outline of the displayed meshes with a small
-margin, not on the corners of their 3D bounding box, while preserving equal
-physical units per axis; never stretch anatomy to fill the image or clip it at
-the axes.
+Let PyVista fit the camera, then crop the render to the anatomy's visible pixels
+with a small margin, because the fit alone leaves whitespace around it. Cropping
+preserves equal physical units per axis; never stretch anatomy to fill the image
+or clip it.
 Output 1200 by 1200 PNGs with a white background, a camera-matched R/A/S
 orientation triad, and readable titles and legends; a long legend reduces the
 anatomy area instead of covering it. Keep stable organ colors; render available
@@ -294,13 +303,13 @@ spine/pelvis meshes as translucent gray reference in every individual organ
 view. A selected bone is opaque light blue against the other context bones.
 Frame the organ and reference together in their original coordinates.
 
-Transparency is illustrative: matplotlib does not provide exact per-pixel
-surface ordering. State that overlap is approximate in the combined caption
-even when no skeletal reference is available; the combined image cannot
-guarantee visibility of every organ. Missing context does not prevent rendering;
-label views without available skeletal reference. A non-finite context mesh
-fails its own preview and, when selected, the combined preview; other views omit
-it as reference and still render.
+Resolve surfaces per pixel with a depth buffer. Reference bones share one color,
+so depth peeling changed almost nothing on a real scan and is not used. State in
+the combined caption that organs may hide one another, even
+when no skeletal reference is available. Missing context does not prevent
+rendering; label views without available skeletal reference. A non-finite context
+mesh fails its own preview and, when selected, the combined preview; other views
+omit it as reference and still render.
 
 P0 renders the assembled meshes without decimation or face-count budgets.
 Do not reject a preview based on mesh size alone or alter source geometry.
@@ -318,7 +327,7 @@ requested devices fail preflight. Performance benchmarking and resource
 profiling are potential P1 work; P0 has no runtime or memory release gates.
 
 Declare numpy, nibabel, scikit-image, trimesh, pydicom, dicom2nifti,
-TotalSegmentator, and matplotlib as direct dependencies.
+TotalSegmentator, matplotlib, and pyvista as direct dependencies.
 Add any further direct imports explicitly. Maintain tested versions and
 verify supported wheels in clean environments. Do not rely on transitive
 installation or historical install logs.

@@ -137,14 +137,22 @@ The output directory must be new or empty. A successful run writes
 `manifest.json`, `model.ply`, individual files under `structures/`, and PNG
 previews under `previews/`. Previews use shaded anterior-oblique views with
 translucent spine/pelvis context, equal physical scaling, and an R/A/S
-orientation guide. Surface overlap is approximate; individual views show each
-organ against the available skeletal reference. The first inference run may
-download TotalSegmentator weights and therefore requires internet access. Input
-scans remain local; do not place real scan data in the repository.
+orientation guide. Organs can hide one another in the combined view; individual
+views show each organ against the available skeletal reference. The first
+inference run may download TotalSegmentator weights and therefore requires
+internet access. Input scans remain local; do not place real scan data in the
+repository.
 
 The CLI returns exit code 0 for completion, 1 for fatal inference or export
 failures, 2 for invalid input or series selection, and 3 when exports succeed
 but one or more previews fail.
+
+Previews are drawn with PyVista, which needs OpenGL. A desktop or laptop normally
+has this already. A server or container without a display typically needs extra
+setup, such as a virtual display (`xvfb`) and OpenGL system libraries. Without
+it, exports still succeed and the run reports `renderer_unavailable` with exit
+code 3. A script calling `render_previews` directly needs the usual
+`if __name__ == "__main__":` guard, because rendering starts a new process.
 
 No real-inference integration test is committed yet. The test-infrastructure
 suite verifies selection, network controls, and scan-input handling with

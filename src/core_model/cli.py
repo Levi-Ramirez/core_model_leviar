@@ -89,6 +89,9 @@ def main(argv=None) -> int:
     if result.status == "partial":
         for error in result.errors:
             print(f"warning: {error.stage}:{error.reason}", file=sys.stderr)
+        if any(error.reason == "renderer_unavailable" for error in result.errors):
+            print("Previews need OpenGL and a display; meshes were still exported. "
+                  "See the README for running without a display.", file=sys.stderr)
         return 3
     return 0
 

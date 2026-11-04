@@ -70,10 +70,12 @@ This is a visualization tool, not a diagnostic tool or clinical finding.
   anterior-oblique view, equal physical scaling, content-based framing, stable
   colors, structure labels/legend, and a camera-matched orientation guide.
   Individual views include available translucent spine/pelvis reference in the
-  same physical coordinates; selected bones use opaque light blue. Explain
-  approximate surface overlap in the caption. Render the assembled meshes
+  same physical coordinates; selected bones use opaque light blue. State in the
+  combined caption that organs may hide one another. Render the assembled meshes
   without face reduction in P0 and leave their geometry unchanged; hidden
   structures remain inspectable through their individual previews and exports.
+  Previews require OpenGL; when it is unavailable, exports still succeed and the
+  run reports a partial result.
 - **R7 — Invocation and results.** CLI and library expose the same complete
   pipeline. Return structured output paths, included/skipped structures,
   warnings, stage status, and errors. Preserve original inputs, keep owned

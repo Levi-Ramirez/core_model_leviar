@@ -15,6 +15,22 @@ def pytest_addoption(parser):
     )
 
 
+@pytest.fixture(scope="session")
+def opengl(tmp_path_factory):
+    """Skip tests that draw only when this machine has no usable renderer."""
+    import trimesh
+
+    from core_model.render import render_previews
+
+    scene = trimesh.Scene()
+    scene.add_geometry(trimesh.creation.box(), geom_name="liver")
+    result = render_previews(scene, tmp_path_factory.mktemp("opengl_probe"))
+    if "renderer_unavailable" in result.failures.values():
+        pytest.skip("Preview rendering is unavailable on this machine")
+    # Anything else is a rendering bug, which must fail rather than skip.
+    assert not result.failures, result.failures
+
+
 @pytest.fixture
 def local_scan_path(request):
     """Require a local input without collecting or downloading patient data."""

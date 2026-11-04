@@ -1,14 +1,20 @@
-"""Render named model meshes as fixed-view PNG previews."""
+"""Render named model meshes as fixed-view PNG previews.
 
+PyVista draws the anatomy in a worker process and Matplotlib lays out the page
+around it. A missing display or OpenGL driver can crash the process that opens
+the render window instead of raising, so that process must not be the caller's.
+"""
+
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
+import multiprocessing
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import LightSource
 from matplotlib.patches import Patch
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 import trimesh
 
@@ -19,7 +25,6 @@ from core_model.constants.anatomy_constants import SPINE_AND_PELVIS_STRUCTURES
 _CONTEXT = frozenset(SPINE_AND_PELVIS_STRUCTURES)
 # RAS+: +Y is anterior, +X is right, +Z is superior.
 _ELEVATION, _AZIMUTH = 18, 65
-_LIGHT = LightSource(azdeg=25, altdeg=50)
 _CONTEXT_COLOR = np.array((0.76, 0.75, 0.71))
 _CONTEXT_ALPHA = 0.20
 # A mesh stacks front and back faces, so its reference gray looks denser than a
@@ -27,16 +32,12 @@ _CONTEXT_ALPHA = 0.20
 _CONTEXT_LEGEND_ALPHA = 0.4
 _SELECTED_BONE_COLOR = np.array((135, 206, 250)) / 255.0  # Light sky blue.
 
-# Numerical floor for degenerate bounds; mesh coordinates are in millimeters.
-_MIN_AXIS_EXTENT_MM = 1e-6
-# Keep the viewing box from collapsing around thin or nearly planar structures.
-_MIN_AXIS_FRACTION_OF_LONGEST = 0.08
-# Leave 2% of the framed span as margin on each side.
+# Drawn larger than the page shows, since anatomy fills only part of the render
+# and scaling down smooths its edges.
+_RENDER_SIZE_PX = 2400
+# Leave 2% of the cropped span as margin on each side.
 _FRAME_PADDING_FACTOR = 1.04
-# Half of the 3D view's visible span in box units; Matplotlib's axes show
-# -0.95 to +0.9 horizontally and vertically, so the smaller side is the limit.
-_VIEW_HALF_SPAN = 0.9
-# Default vertical span of the anatomy axes, as figure fractions.
+# Default vertical span of the anatomy image, as figure fractions.
 _ANATOMY_BOTTOM, _ANATOMY_TOP = 0.10, 0.91
 _LEGEND_GAP = 0.01
 _LEGEND_FONT_SIZE = 12
@@ -57,61 +58,49 @@ class RenderResult:
     failures: dict[str, str]
 
 
-def _finite_points(meshes: list[trimesh.Trimesh]) -> np.ndarray:
-    """Collect the vertices used to frame a view.
+def _crop_to_anatomy(image: np.ndarray) -> np.ndarray:
+    """Crop a render to a centered square around its non-white pixels.
 
-    Input: Meshes to frame.
-    Output: An ``(n, 3)`` array of finite world coordinates.
+    Input: An RGB image on a pure white background.
+    Output: A square RGB image with a small margin; raises ``ValueError`` if blank.
     """
-    points = np.concatenate([mesh.vertices for mesh in meshes])
-    if not np.isfinite(points).all():
-        raise ValueError("nonfinite_mesh")
-    return points
+    rows, columns = np.nonzero((image < 255).any(axis=2)) # get indices of non-white pixels
+    if rows.size == 0:
+        raise ValueError("empty_render")
+    anatomy = image[rows.min():rows.max() + 1, columns.min():columns.max() + 1]
+    height, width = anatomy.shape[:2]
+    side = round(max(height, width) * _FRAME_PADDING_FACTOR)
+    square = np.full((side, side, 3), 255, dtype=np.uint8) # create white square
+    top, left = (side - height) // 2, (side - width) // 2
+    square[top:top + height, left:left + width] = anatomy # copy anatomy into center of square
+    return square
 
 
-def _screen_axes() -> np.ndarray:
-    """Return the camera's screen directions in world coordinates.
+def _draw_anatomy(layers: list[tuple[trimesh.Trimesh, np.ndarray, float]]) -> np.ndarray:
+    """Draw meshes from the fixed orthographic camera, cropped to the anatomy.
 
-    Input: None; uses the fixed preview camera.
-    Output: A ``(2, 3)`` array of unit vectors for screen right and screen up.
+    Input: ``(mesh, RGB color, opacity)`` layers in RAS+ millimeters.
+    Output: A square RGB image on a white background.
     """
-    elevation, azimuth = np.radians((_ELEVATION, _AZIMUTH))
-    return np.array((
-        (-np.sin(azimuth), np.cos(azimuth), 0),
-        (-np.sin(elevation) * np.cos(azimuth), -np.sin(elevation) * np.sin(azimuth),
-         np.cos(elevation)),
-    ))
+    # Imported here so a broken OpenGL install only affects the worker process.
+    import pyvista as pv
 
-
-def _frame_view(ax, points: np.ndarray) -> None:
-    """Fit the camera to the visible outline at equal physical scale.
-
-    The 3D bounding box's corners are usually empty, so sizing from them leaves
-    whitespace around the anatomy. Scale and center on the projected vertices.
-
-    Input: Matplotlib 3D axes and the finite world coordinates to show.
-    Output: None; axes limits and box aspect are updated in place.
-    """
-    minimum, maximum = points.min(axis=0), points.max(axis=0)
-    extent = np.maximum(maximum - minimum, _MIN_AXIS_EXTENT_MM)
-    extent = np.maximum(extent, extent.max() * _MIN_AXIS_FRACTION_OF_LONGEST)
-    extent *= _FRAME_PADDING_FACTOR
-
-    screen_axes = _screen_axes()
-    screen = points @ screen_axes.T
-    screen_low, screen_high = screen.min(axis=0), screen.max(axis=0)
-    # Limits may sit off the bounds' center; only depth is left unchanged.
-    center = (minimum + maximum) / 2
-    center += ((screen_low + screen_high) / 2 - screen_axes @ center) @ screen_axes
-    for setter, mid, span in zip((ax.set_xlim, ax.set_ylim, ax.set_zlim), center, extent):
-        setter(mid - span / 2, mid + span / 2)
-
-    # Match display-box proportions to the axis ranges so one millimeter has
-    # the same scale on every axis, without requiring a cubic viewing box.
-    ax.set_box_aspect(tuple(extent))
-    box_units_per_mm = ax.get_box_aspect()[0] / extent[0]
-    outline = max((screen_high - screen_low).max(), _MIN_AXIS_EXTENT_MM) * _FRAME_PADDING_FACTOR
-    ax.set_box_aspect(tuple(extent), zoom=2 * _VIEW_HALF_SPAN / (box_units_per_mm * outline))
+    pv.vtk_verbosity("off")
+    plotter = pv.Plotter(off_screen=True, window_size=(_RENDER_SIZE_PX, _RENDER_SIZE_PX))
+    try:
+        plotter.set_background("white")
+        for mesh, color, opacity in layers:
+            surface = pv.PolyData.from_regular_faces(mesh.vertices, mesh.faces)
+            plotter.add_mesh(surface, color=color, opacity=opacity, smooth_shading=True,
+                             ambient=0.25, diffuse=0.75, specular=0.0)
+        elevation, azimuth = np.radians((_ELEVATION, _AZIMUTH)) # convert degree views to rads
+        plotter.enable_parallel_projection()
+        plotter.view_vector((np.cos(elevation) * np.cos(azimuth),
+                             np.cos(elevation) * np.sin(azimuth), np.sin(elevation)),
+                            viewup=(0, 0, 1)) # view angle relative to anatomy mesh (viewup defines what dimension is "up")
+        return _crop_to_anatomy(plotter.screenshot(return_img=True))
+    finally:
+        plotter.close()
 
 
 def _orientation(figure) -> None:
@@ -137,7 +126,6 @@ def _render_one(meshes: list[tuple[str, trimesh.Trimesh]], path: Path, title: st
     """Render shaded oblique anatomy with translucent skeletal reference.
 
     Source meshes remain in their original RAS+ millimeter coordinates.
-    Matplotlib transparency/depth sorting is illustrative, not volumetric.
 
     Input:
         meshes: Named meshes and their source geometry.
@@ -146,39 +134,31 @@ def _render_one(meshes: list[tuple[str, trimesh.Trimesh]], path: Path, title: st
         combined: Whether this is the overview, where every bone is reference.
     Output: None; writes a 1200 by 1200 PNG.
     """
-    points = _finite_points([mesh for _, mesh in meshes])
+    if not all(np.isfinite(mesh.vertices).all() for _, mesh in meshes):
+        raise ValueError("nonfinite_mesh")
+    context_present = False
+    legend = []
+    layers = []
+    for name, mesh in meshes:
+        if name in _CONTEXT and (combined or name != title):
+            color, opacity = _CONTEXT_COLOR, _CONTEXT_ALPHA
+            context_present = True
+        else:
+            color, opacity = _SELECTED_BONE_COLOR, 1.0
+            if name not in _CONTEXT:
+                color = np.asarray(structure_color(name), dtype=float) / 255.0
+            legend.append(Patch(facecolor=color, label=structure_label(name)))
+        layers.append((mesh, color, opacity))
+    if context_present:
+        legend.append(Patch(facecolor=_CONTEXT_COLOR, alpha=_CONTEXT_LEGEND_ALPHA,
+                            label="Spine / pelvis reference"))
+
     figure = plt.figure(figsize=(12, 12), dpi=100, facecolor="white")
     try:
-        ax = figure.add_axes((0.02, _ANATOMY_BOTTOM, 0.96, _ANATOMY_TOP - _ANATOMY_BOTTOM),
-                             projection="3d")
-        ax.set_proj_type("ortho")
-        ax.view_init(elev=_ELEVATION, azim=_AZIMUTH)
-        context_present = False
-        legend = []
-        for name, mesh in meshes:
-            if name in _CONTEXT and (combined or name != title):
-                color, alpha = _CONTEXT_COLOR, _CONTEXT_ALPHA
-                context_present = True
-            else:
-                color, alpha = _SELECTED_BONE_COLOR, 1.0
-                if name not in _CONTEXT:
-                    color = np.asarray(structure_color(name), dtype=float) / 255.0
-                legend.append(Patch(facecolor=color, label=structure_label(name)))
-            collection = Poly3DCollection(
-                mesh.triangles, facecolors=(*color, alpha), edgecolor="none", linewidth=0,
-                shade=True, lightsource=_LIGHT,
-            )
-            ax.add_collection3d(collection)
-        _frame_view(ax, points)
-        ax.set_axis_off()
         figure.text(0.06, 0.95, "Anatomy overview" if combined else structure_label(title),
                     fontsize=24, weight="bold", color="#243342")
         figure.text(0.06, 0.919, "Anterior oblique",
                     fontsize=11, color="#5a6773")
-        _orientation(figure)
-        if context_present:
-            legend.append(Patch(facecolor=_CONTEXT_COLOR, alpha=_CONTEXT_LEGEND_ALPHA,
-                                label="Spine / pelvis reference"))
         legend_artist = figure.legend(
             handles=legend, loc="lower center", bbox_to_anchor=(0.5, 0.047),
             ncol=min(4, len(legend)), frameon=False, fontsize=_LEGEND_FONT_SIZE,
@@ -187,13 +167,14 @@ def _render_one(meshes: list[tuple[str, trimesh.Trimesh]], path: Path, title: st
         # Long legends (for example --all-structures) must not cover the anatomy.
         legend_top = legend_artist.get_window_extent().y1 / figure.bbox.height
         bottom = max(_ANATOMY_BOTTOM, legend_top + _LEGEND_GAP)
-        ax.set_position((0.02, bottom, 0.96, _ANATOMY_TOP - bottom))
-        if context_present:
-            caption = "Translucent bone is a spatial reference; surface overlap is approximate."
-        elif combined:
-            caption = "Skeletal reference unavailable; surface overlap is approximate."
-        else:
-            caption = "Skeletal reference unavailable in this view."
+        side = _ANATOMY_TOP - bottom
+        ax = figure.add_axes(((1 - side) / 2, bottom, side, side))
+        ax.set_axis_off()
+        ax.imshow(_draw_anatomy(layers))
+        _orientation(figure)
+        reference = ("Translucent bone is a spatial reference" if context_present
+                     else "Skeletal reference unavailable")
+        caption = f"{reference}; organs may hide one another." if combined else f"{reference}."
         figure.text(0.5, 0.024, caption, ha="center", fontsize=9, color="#68737d")
         figure.savefig(path, format="png", dpi=100, facecolor="white")
     finally:
@@ -202,6 +183,9 @@ def _render_one(meshes: list[tuple[str, trimesh.Trimesh]], path: Path, title: st
 
 def render_previews(scene: trimesh.Scene, output_dir: Path, *, names=None) -> RenderResult:
     """Render individual and combined 1200 by 1200 PNG previews.
+
+    Rendering starts a new process, so a script calling this directly needs the
+    usual ``if __name__ == "__main__":`` guard.
 
     Input:
         scene: Named ``trimesh.Scene`` whose geometry is rendered in place.
@@ -213,7 +197,10 @@ def render_previews(scene: trimesh.Scene, output_dir: Path, *, names=None) -> Re
     Output:
         A ``RenderResult`` retaining successful paths and safe failures. A
         non-finite spine/pelvis mesh fails only its own and, when named, the
-        combined preview; other views omit it as reference.
+        combined preview; other views omit it as reference. Previews that cannot
+        run because the worker could not be created, crashed, or could not load
+        the renderer report ``renderer_unavailable``; others that fail report
+        ``preview_failed``.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -221,31 +208,42 @@ def render_previews(scene: trimesh.Scene, output_dir: Path, *, names=None) -> Re
     ordered = tuple(dict.fromkeys(names if names is not None else geometry))
     ordered = tuple(name for name in ordered if name in geometry)
     paths, failures = {}, {}
-    selected = [(name, geometry[name]) for name in ordered]
-    context = [(name, mesh) for name, mesh in geometry.items()
+    context = [name for name, mesh in geometry.items()
                if name in _CONTEXT and np.isfinite(mesh.vertices).all()]
-    selected.extend((name, mesh) for name, mesh in context if name not in ordered)
-    # Each job contains the output name, meshes to show, and whether it is
+    # Each job contains the output name, structures to show, and whether it is
     # the combined overview. Start with the overview of all selected anatomy.
-    preview_jobs = [("combined", selected, True)]
+    combined_names = list(ordered)
+    for bone in context:
+        if bone not in ordered:
+            combined_names.append(bone)
+    preview_jobs = [("combined", combined_names, True)]
 
     for name in ordered:
         # Show this structure alongside the surrounding skeleton.
-        individual_meshes = [(name, geometry[name])]
-        for bone_name, bone_mesh in context:
+        individual_names = [name]
+        for bone in context:
             # A selected bone is already included above; do not draw it twice.
-            if bone_name != name:
-                individual_meshes.append((bone_name, bone_mesh))
+            if bone != name:
+                individual_names.append(bone)
+        preview_jobs.append((name, individual_names, False))
 
-        preview_jobs.append((name, individual_meshes, False))
-
-    for name, meshes, combined in preview_jobs:
-        target = output_dir / f"{name}.png"
-        try:
-            _render_one(meshes, target, name, combined)
-            paths[name] = target
-        except Exception:
-            failures[name] = "preview_failed"
+    # "spawn" because forking is unsafe for OpenGL and already-threaded libraries.
+    spawn = multiprocessing.get_context("spawn")
+    try:
+        pool = ProcessPoolExecutor(max_workers=1, mp_context=spawn)
+    except OSError:
+        return RenderResult({}, {name: "renderer_unavailable" for name, _, _ in preview_jobs})
+    with pool:
+        for name, shown, combined in preview_jobs:
+            target = output_dir / f"{name}.png"
+            try:
+                meshes = [(shown_name, geometry[shown_name]) for shown_name in shown]
+                pool.submit(_render_one, meshes, target, name, combined).result()
+                paths[name] = target
+            except (BrokenProcessPool, ImportError):
+                failures[name] = "renderer_unavailable"
+            except Exception:
+                failures[name] = "preview_failed"
     return RenderResult(paths, failures)
 
 

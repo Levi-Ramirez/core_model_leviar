@@ -43,4 +43,15 @@ def test_partial_result_returns_three(monkeypatch, tmp_path, capsys):
     )
     monkeypatch.setattr(cli, "generate_model", lambda *args, **kwargs: result)
     assert cli.main(["generate", "scan", "--output", "out"]) == 3
-    assert "status: partial" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "status: partial" in captured.out
+    assert "Previews need OpenGL" not in captured.err
+
+
+def test_unavailable_renderer_explains_the_requirement_once(monkeypatch, tmp_path, capsys):
+    errors = [StageIssue("render", "renderer_unavailable"),
+              StageIssue("render", "renderer_unavailable", "liver")]
+    result = GenerationResult(tmp_path, "partial", errors=errors)
+    monkeypatch.setattr(cli, "generate_model", lambda *args, **kwargs: result)
+    assert cli.main(["generate", "scan", "--output", "out"]) == 3
+    assert capsys.readouterr().err.count("Previews need OpenGL") == 1

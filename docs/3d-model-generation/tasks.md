@@ -122,7 +122,8 @@ order below; no actual scan, output, or identifying log belongs in Git.
   - Render the existing Scene into labeled 1200 x 1200 anterior-oblique PNGs
     with orthographic projection, directional lighting, equal physical scaling,
     stable colors, translucent spine/pelvis context in individual views,
-    camera-matched orientation markers, and an approximate-overlap caption.
+    camera-matched orientation markers, and a caption stating that organs may
+    hide one another in the combined view.
   - Render assembled meshes without face reduction or face-count budgets.
     Report actual rendering failures and preserve exports; do not omit
     structures or mutate original meshes.
@@ -133,12 +134,13 @@ order below; no actual scan, output, or identifying log belongs in Git.
     does not reject scenes based on face count. Visually inspect
     a combined release preview for acceptable occlusion; record limitations
     without patient data.
-  - Implemented Agg/matplotlib shaded anterior-oblique previews at 1200 by
-    1200 pixels with equal physical scaling, stable colors, labels, skeletal
-    reference, and a camera-matched R/A/S orientation triad. Combined and
-    individual failures are reported while successful previews remain
-    available; a bad context mesh does not fail other organs' previews, and
-    source meshes are never modified.
+  - Implemented PyVista shaded anterior-oblique previews, in a worker process
+    and laid out with matplotlib, at 1200 by 1200 pixels with equal physical
+    scaling, stable colors, labels, skeletal reference, and a camera-matched
+    R/A/S orientation triad. Combined and individual failures are reported while
+    successful previews remain available; a renderer crash reports
+    `renderer_unavailable` and retains exports; a bad context mesh does not fail
+    other organs' previews, and source meshes are never modified.
 
 - [x] **`generation.py`: model generation orchestration and lifecycle (R7–R9, R11).**
   - Implement `generate_model`, workspace ownership, preflight, stage manifest

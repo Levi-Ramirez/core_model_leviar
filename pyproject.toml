@@ -15,6 +15,7 @@ dependencies = [
     "scikit-image>=0.21",
     "trimesh>=4.0",
     "matplotlib>=3.7",
+    "pyvista>=0.49,<0.50",
     "TotalSegmentator==2.18.0",
     "pydicom>=3.0",
     "dicom2nifti>=2.6.2",

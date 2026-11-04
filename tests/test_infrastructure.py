@@ -99,3 +99,26 @@ def test_cannot_request_patient_input(configured_pytester):
         """
     )
     runner.runpytest_subprocess("test_scan.py").assert_outcomes(errors=1)
+
+
+@pytest.mark.parametrize(
+    "reason, outcome",
+    [("renderer_unavailable", {"skipped": 1}), ("preview_failed", {"errors": 1})],
+    ids=["no_renderer_skips", "rendering_bug_fails"],
+)
+def test_opengl_fixture_only_skips_when_the_renderer_is_unavailable(
+    configured_pytester, reason, outcome
+):
+    configured_pytester.makepyfile(
+        test_probe=f"""
+        import core_model.render as render
+
+        render.render_previews = lambda *args, **kwargs: render.RenderResult(
+            {{}}, {{"combined": "{reason}"}}
+        )
+
+        def test_needs_rendering(opengl):
+            pass
+        """
+    )
+    configured_pytester.runpytest_subprocess("test_probe.py").assert_outcomes(**outcome)
