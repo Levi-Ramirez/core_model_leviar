@@ -10,8 +10,8 @@ import pytest
 
 from core_model.anatomy import (
     CONTEXT_COLOR, DEFAULT_STRUCTURES, SPINE_AND_PELVIS_STRUCTURES,
-    STRUCTURE_COLORS, SUPPORTED_STRUCTURES, TOTAL_CLASS_MAP,
-    TOTALSEGMENTATOR_VERSION, resolve_selection, structure_color,
+    STRUCTURE_COLORS, STRUCTURE_LABELS, SUPPORTED_STRUCTURES, TOTAL_CLASS_MAP,
+    TOTALSEGMENTATOR_VERSION, resolve_selection, structure_color, structure_label,
 )
 from core_model.contracts import GenerationOptions
 
@@ -78,11 +78,41 @@ def test_colors_are_selection_independent_and_context_is_subdued():
     assert len({structure_color(name) for name in DEFAULT_STRUCTURES}) == len(DEFAULT_STRUCTURES)
 
 
+def test_every_supported_class_has_exactly_one_distinct_label():
+    assert set(STRUCTURE_LABELS) == set(SUPPORTED_STRUCTURES)
+    assert all(label.strip() for label in STRUCTURE_LABELS.values())
+    assert len(set(STRUCTURE_LABELS.values())) == len(STRUCTURE_LABELS)
+
+
+@pytest.mark.parametrize('side', ['left', 'right'])
+def test_labels_state_the_same_side_as_their_class(side):
+    # The labels are written by hand, and a swapped side would mislead a reader.
+    for name, label in STRUCTURE_LABELS.items():
+        assert (side in name.split('_')) == (side in label.lower().split()), name
+
+
+@pytest.mark.parametrize('name, label', [
+    ('liver', 'Liver'),
+    ('vertebrae_L1', 'Vertebrae L1'),
+    ('rib_right_12', 'Rib right 12'),
+    ('portal_vein_and_splenic_vein', 'Portal vein and splenic vein'),
+])
+def test_structure_label_returns_the_mapped_label(name, label):
+    assert structure_label(name) == label
+
+
+def test_structure_label_rejects_unknown_class():
+    with pytest.raises(ValueError, match='Unknown total-task class'):
+        structure_label('imaginary_organ')
+
+
 def test_maps_are_read_only():
     with pytest.raises(TypeError):
         TOTAL_CLASS_MAP[1] = 'changed'
     with pytest.raises(TypeError):
         STRUCTURE_COLORS['liver'] = (0, 0, 0)
+    with pytest.raises(TypeError):
+        STRUCTURE_LABELS['liver'] = 'changed'
 
 
 def test_anatomy_import_is_lightweight_and_colors_stable_across_processes():

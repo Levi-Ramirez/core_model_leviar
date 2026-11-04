@@ -11,6 +11,7 @@ from core_model.constants.anatomy_constants import (
     DEFAULT_STRUCTURE_COLORS,
     DEFAULT_STRUCTURES,
     SPINE_AND_PELVIS_STRUCTURES,
+    STRUCTURE_LABELS,
     TOTALSEGMENTATOR_VERSION,
 )
 from core_model.constants.segmentator_class_map import TOTAL_CLASS_MAP
@@ -78,5 +79,17 @@ def structure_color(name: str) -> tuple[int, int, int]:
     """
     try:
         return STRUCTURE_COLORS[name]
+    except KeyError:
+        raise ValueError("Unknown total-task class; use a supported structure name") from None
+
+
+def structure_label(name: str) -> str:
+    """Return the display label for a class in every title and legend.
+
+    Input: A supported TotalSegmentator class name.
+    Output: The label from ``STRUCTURE_LABELS``.
+    """
+    try:
+        return STRUCTURE_LABELS[name]
     except KeyError:
         raise ValueError("Unknown total-task class; use a supported structure name") from None

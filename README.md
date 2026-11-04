@@ -135,9 +135,12 @@ compute device and quality explicitly:
 
 The output directory must be new or empty. A successful run writes
 `manifest.json`, `model.ply`, individual files under `structures/`, and PNG
-previews under `previews/`. The first inference run may download
-TotalSegmentator weights and therefore requires internet access. Input scans
-remain local; do not place real scan data in the repository.
+previews under `previews/`. Previews use shaded anterior-oblique views with
+translucent spine/pelvis context, equal physical scaling, and an R/A/S
+orientation guide. Surface overlap is approximate; individual views show each
+organ against the available skeletal reference. The first inference run may
+download TotalSegmentator weights and therefore requires internet access. Input
+scans remain local; do not place real scan data in the repository.
 
 The CLI returns exit code 0 for completion, 1 for fatal inference or export
 failures, 2 for invalid input or series selection, and 3 when exports succeed

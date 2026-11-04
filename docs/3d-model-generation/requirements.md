@@ -66,12 +66,14 @@ This is a visualization tool, not a diagnostic tool or clinical finding.
   stable structure colors. A manifest records names, units, and paths.
   Combined PLY does not promise named objects or embedded unit metadata.
 - **R6 — Previews.** Produce one PNG per included structure, including
-  context structures, plus one combined PNG. Use a fixed anterior view,
-  equal physical scaling, content-based framing, stable colors, structure
-  labels/legend, and orientation markers. Combined context uses subdued
-  styling. Render the assembled meshes without face reduction in P0 and
-  leave their geometry unchanged; hidden structures remain
-  inspectable through their individual previews and exports.
+  context structures, plus one combined PNG. Use a fixed shaded
+  anterior-oblique view, equal physical scaling, content-based framing, stable
+  colors, structure labels/legend, and a camera-matched orientation guide.
+  Individual views include available translucent spine/pelvis reference in the
+  same physical coordinates; selected bones use opaque light blue. Explain
+  approximate surface overlap in the caption. Render the assembled meshes
+  without face reduction in P0 and leave their geometry unchanged; hidden
+  structures remain inspectable through their individual previews and exports.
 - **R7 — Invocation and results.** CLI and library expose the same complete
   pipeline. Return structured output paths, included/skipped structures,
   warnings, stage status, and errors. Preserve original inputs, keep owned

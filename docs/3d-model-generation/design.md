@@ -281,14 +281,26 @@ validate representative combined previews visually before release. Do not
 promise correct interpenetrating-surface occlusion or visibility of every
 structure in the combined image.
 
-Use an orthographic anterior camera looking along -A, with S up and R to
-image-left. Fit bounds with margin while preserving equal units per axis;
-never independently stretch axes to fill the image. Output 1200 by 1200 PNGs
-with a white background, orientation markers, and a structure title or
-combined legend. Use stable organ colors and light gray opaque context;
-avoid transparency as a remedy for depth-sorting limitations. Warn in the
-combined caption that structures may obscure one another. Individual views
-include only the named structure and fit its own extent.
+Use an orthographic anterior-oblique camera on the +A side of RAS+ space
+(elevation 18 degrees, azimuth 65 degrees), with directional surface lighting.
+Frame the camera on the projected outline of the displayed meshes with a small
+margin, not on the corners of their 3D bounding box, while preserving equal
+physical units per axis; never stretch anatomy to fill the image or clip it at
+the axes.
+Output 1200 by 1200 PNGs with a white background, a camera-matched R/A/S
+orientation triad, and readable titles and legends; a long legend reduces the
+anatomy area instead of covering it. Keep stable organ colors; render available
+spine/pelvis meshes as translucent gray reference in every individual organ
+view. A selected bone is opaque light blue against the other context bones.
+Frame the organ and reference together in their original coordinates.
+
+Transparency is illustrative: matplotlib does not provide exact per-pixel
+surface ordering. State that overlap is approximate in the combined caption
+even when no skeletal reference is available; the combined image cannot
+guarantee visibility of every organ. Missing context does not prevent rendering;
+label views without available skeletal reference. A non-finite context mesh
+fails its own preview and, when selected, the combined preview; other views omit
+it as reference and still render.
 
 P0 renders the assembled meshes without decimation or face-count budgets.
 Do not reject a preview based on mesh size alone or alter source geometry.
